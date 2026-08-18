@@ -34,8 +34,29 @@ export default async function middleware(req: NextRequest) {
       return NextResponse.json({ error: "Nao autenticado" }, { status: 401 })
     }
     const login = new URL("/login", req.url)
-    login.searchParams.set("callbackUrl", req.nextUrl.href)
+    // Caminho RELATIVO, nunca `req.nextUrl.href`.
+    //
+    // Atras de proxy (EasyPanel, Traefik), `href` resolve para o endereco
+    // INTERNO do container — o callback virava `https://0.0.0.0:3000/inbox` e
+    // depois do login o usuario caia num endereco morto.
+    //
+    // E tambem fecha um open redirect: `href` deriva do header `Host`, que o
+    // cliente controla; um Host forjado mandaria a vitima para fora do dominio
+    // depois de autenticar.
+    if (pathname !== "/") {
+      login.searchParams.set("callbackUrl", pathname + req.nextUrl.search)
+    }
     return NextResponse.redirect(login)
+  }
+
+  // A raiz e resolvida AQUI, e nao por `redirect()` em src/app/page.tsx.
+  //
+  // Com o redirect na pagina, uma visita a `/` sem sessao virava dois saltos
+  // encadeados (`/` -> `/inbox` -> `/login`), e o roteador do cliente quebrava
+  // no meio com "Minified React error #310" — tela branca com
+  // "Application error", em producao.
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL("/inbox", req.url))
   }
 
   // RBAC so na API. As paginas continuam abertas a qualquer usuario logado —
@@ -52,6 +73,9 @@ export default async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    // A raiz entra no matcher para o middleware resolver o destino num salto
+    // so. Sem ela, `src/app/page.tsx` fazia o redirect e a cadeia quebrava.
+    "/",
     "/api/:path*",
     "/inbox/:path*",
     "/contacts/:path*",

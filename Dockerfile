@@ -46,20 +46,29 @@ ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3005
 
+# `--create-home` nao e detalhe: sem `/home/nextjs`, qualquer `npm`/`npx`
+# rodado no terminal do container morre com
+# `EACCES: permission denied, mkdir '/home/nextjs'` antes de fazer nada.
 RUN groupadd --system --gid 1001 nodejs \
-  && useradd --system --uid 1001 --gid nodejs nextjs
+  && useradd --system --uid 1001 --gid nodejs --create-home --home-dir /home/nextjs nextjs
+ENV HOME=/home/nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# O tracing do Next nao acha o cliente do Prisma (ele e gerado, nao importado
-# estaticamente). Sem estas duas copias o container sobe e morre na primeira
-# consulta com "@prisma/client did not initialize yet".
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-# `prisma db push` e rodado na mao apos o primeiro deploy; o schema precisa
-# estar na imagem para isso.
+# O standalone JA traz `@prisma`, `.prisma`, `pg` e `sharp` — verificado no
+# build, nao suposto. O que ele NAO traz e o CLI do `prisma`, que e
+# devDependency e nao e importado por codigo.
+#
+# Sem o CLI na imagem, `npx prisma db push` tenta BAIXAR o pacote do registry
+# de dentro do container e morre com EACCES. Custa ~60 MB e e o que torna a
+# migracao possivel sem subir um container separado so para isso.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
+
+# Schema e scripts para rodar `prisma db push && node scripts/db-constraints.mjs`
+# apos o primeiro deploy.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
