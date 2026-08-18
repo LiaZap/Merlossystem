@@ -53,7 +53,17 @@ ENV NODE_ENV=production
 # `HOSTNAME` em 0.0.0.0: o padrao do Next standalone e localhost, e ai o
 # container sobe mas nao aceita conexao de fora — parece healthcheck quebrado.
 ENV HOSTNAME=0.0.0.0
-ENV PORT=3005
+
+# 3000, nao 3005 (que e a porta de desenvolvimento local deste projeto).
+#
+# Plataformas de deploy injetam `PORT` e ela sobrescreve esta linha. O
+# EasyPanel injeta 3000: com 3005 aqui, o container subia em 3000 e a regra de
+# dominio apontava para 3005 — o proxy batia em porta fechada e devolvia o
+# proprio 404, que parece "app fora do ar" mas e so porta trocada.
+#
+# Com 3000 os dois caminhos concordam: se a plataforma injetar, e 3000; se nao
+# injetar, tambem e 3000. A ambiguidade deixa de existir.
+ENV PORT=3000
 
 # `--create-home` nao e detalhe: sem `/home/nextjs`, qualquer `npm`/`npx`
 # rodado no terminal do container morre com
@@ -80,6 +90,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
 USER nextjs
-EXPOSE 3005
+EXPOSE 3000
 
 CMD ["node", "server.js"]

@@ -23,7 +23,19 @@ No campo "Arquivo", deixe `Dockerfile`.
 O build e multi-estagio e usa `output: standalone` do Next: a imagem final leva
 so o servidor tracado (~48 MB de app), sem codigo-fonte nem devDependencies.
 
-**Porta**: o container expoe **3005** e escuta em `0.0.0.0`.
+**Porta: 3000.** O container escuta em `0.0.0.0:3000`, e a regra de dominio
+precisa apontar para essa porta.
+
+> [!WARNING]
+> **Porta trocada devolve o 404 do proprio EasyPanel**, que parece "app fora do
+> ar" e nao e. Aconteceu aqui: o Dockerfile trazia 3005 (a porta de
+> desenvolvimento local), o EasyPanel injetou `PORT=3000` por cima, o container
+> subiu em 3000 e a regra de dominio apontava para 3005 — o proxy batia em
+> porta fechada.
+>
+> Hoje o Dockerfile usa 3000 justamente para os dois caminhos concordarem. Se o
+> log do container disser outra porta, e a regra de dominio que precisa
+> acompanhar, nao o contrario.
 
 > [!CAUTION]
 > **Nao passe segredo como build-arg.** O EasyPanel monta o `docker buildx
