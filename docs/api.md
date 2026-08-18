@@ -25,7 +25,7 @@ As 9 rotas fora dessa regra sao as que ninguem chama com sessao. A lista fica em
 | Rota | Como autentica | Sem o segredo configurado |
 |------|----------------|---------------------------|
 | `/api/auth/*` | o proprio fluxo do NextAuth | — |
-| `/api/register` | banco vazio (bootstrap) ou sessao de admin | — |
+| `/api/register` | somente banco vazio (bootstrap do primeiro admin) | — |
 | `/api/alerts/check` | `Authorization: Bearer $CRON_SECRET` | `403` |
 | `/api/transcription` | `Authorization: Bearer $CRON_SECRET` | `403` |
 | `/api/webhooks/whatsapp` | HMAC `X-Hub-Signature-256` (`META_APP_SECRET`) | `403` |
@@ -196,6 +196,9 @@ rede inteira.
 | `/api/lojas/[id]` | PUT | Renomeia, troca o `slug` e define o `blingDepositoId` |
 | `/api/lojas/[id]` | DELETE | Desativa (soft delete). Recusa com `409` se ainda houver usuario ativo ou pedido na loja |
 | `/api/usuarios` | GET | Colegas que atendem a loja, para o seletor de transferencia do chat. Devolve so `id`, `name`, `role`, `avatarUrl` e `storeId` — nunca e-mail ou senha. `storeId` nulo (admin/gerente) entra na lista das duas lojas. **Leitura aberta a todo papel**, escrita so admin (docs/rbac.md) |
+| `/api/usuarios` | POST | Cadastra acesso. Só admin. Zod com os quatro papéis reais; senha mínima de 8; `storeId` obrigatório para `vendedor`/`viewer` e obrigatoriamente nulo para `admin`/`gerente` (constraint `users_loja_por_papel`). `409` em e-mail repetido, `422` em papel/loja incoerentes |
+| `/api/usuarios/[id]` | PUT | Edita nome, papel, loja, senha e ativação. Avalia papel+loja no estado FINAL. `409` se a alteração deixaria o sistema sem administrador ativo |
+| | DELETE | Desativa (`isActive: false`), nunca apaga — o usuário é autor de mensagens, pedidos e da trilha de auditoria (ADR 0005). `409` ao tentar desativar a si mesmo ou o último admin |
 | `/api/integracoes/bling/depositos` | GET | Depositos do Bling, para a tela escolher em vez de pedir id digitado |
 
 **Escrever e configuracao: so admin.** Ler segue o padrao, porque o vendedor

@@ -1,48 +1,48 @@
 import { NextResponse } from "next/server"
 import { hash } from "bcryptjs"
-import { getServerSession } from "next-auth"
 import { prisma } from "@/lib/db/prisma"
-import { authOptions } from "@/lib/auth"
 import { z } from "zod"
 
 const registerSchema = z.object({
   name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
   email: z.string().email("Email inválido"),
-  password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
-  role: z.enum(["admin", "agent", "viewer"]).optional(),
+  password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
 })
 
 /**
- * POST: cria usuario.
+ * POST: cria o PRIMEIRO admin. So isso.
  *
  * Fica fora da protecao de sessao do middleware porque precisa funcionar uma
- * vez com o banco vazio (bootstrap do primeiro admin). Depois disso exige
- * sessao de admin — antes, qualquer visitante criava conta `admin` e entrava
- * no sistema inteiro.
+ * vez com o banco vazio. Depois do primeiro usuario, esta rota recusa: quem
+ * cadastra equipe e `POST /api/usuarios`, na tela de Equipe.
+ *
+ * Antes esta rota TAMBEM cadastrava a equipe, e com o papel `"agent"` — que
+ * nao existe no RBAC (`src/lib/rbac.ts`) nem satisfaz a constraint
+ * `users_loja_por_papel`, cujos ramos exigem `admin|gerente` sem loja ou
+ * `vendedor|viewer` com loja. Resultado: toda criacao depois do bootstrap
+ * batia no banco e falhava, e quando passasse criaria alguem sem acesso a
+ * nada. Um caminho so, em `/api/usuarios`, com os papeis de verdade.
  */
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { name, email, password, role } = registerSchema.parse(body)
+    const { name, email, password } = registerSchema.parse(body)
 
     const ehBootstrap = (await prisma.user.count()) === 0
 
     if (!ehBootstrap) {
-      const session = await getServerSession(authOptions)
-      if (!session?.user) {
-        return NextResponse.json({ error: "Nao autenticado" }, { status: 401 })
-      }
-      if (session.user.role !== "admin") {
-        return NextResponse.json(
-          { error: "Apenas administradores podem criar usuarios" },
-          { status: 403 }
-        )
-      }
+      return NextResponse.json(
+        {
+          error:
+            "O sistema já tem administrador. Novos acessos são criados em Configurações > Equipe.",
+        },
+        { status: 403 }
+      )
     }
 
-    // O primeiro usuario nasce admin (nao ha quem o promova). Os demais nascem
-    // `agent`, salvo escolha explicita de um admin.
-    const roleFinal = ehBootstrap ? "admin" : role ?? "agent"
+    // O primeiro usuario nasce admin: nao ha quem o promova. Papel de gestao
+    // tem `storeId` nulo — ele alcanca as duas lojas.
+    const roleFinal = "admin"
 
     const existingUser = await prisma.user.findUnique({
       where: { email },

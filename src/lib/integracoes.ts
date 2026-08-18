@@ -1,79 +1,8 @@
 import { z } from "zod"
 import { resumoPublico } from "@/lib/cofre"
 
-/**
- * Provedores que o cofre aceita.
- *
- * `facebook` nao estava na lista de integracoes pedida (Bling, TikTok Shop,
- * Instagram, WhatsApp), mas o sistema JA tem canal de Facebook Messenger
- * (`src/lib/channels/facebook.ts`) com webhook proprio. Sem provedor para ele,
- * o webhook nunca resolveria a conta e o canal ficaria mudo.
- */
-export const PROVEDORES = [
-  "bling",
-  "tiktok_shop",
-  "instagram",
-  "facebook",
-  /** WhatsApp pela API oficial da Meta (Cloud API). */
-  "whatsapp_oficial",
-  /** WhatsApp pelo uazapi — API nao-oficial sobre o WhatsApp Web. */
-  "uazapi",
-] as const
-export type Provedor = (typeof PROVEDORES)[number]
-
-/** Provedores que entregam mensagem de cliente (tem conversa e contato). */
-export const PROVEDORES_DE_CANAL: readonly Provedor[] = [
-  "instagram",
-  "facebook",
-  "whatsapp_oficial",
-  "uazapi",
-  "tiktok_shop",
-]
-
-/**
- * Canal de cada provedor de mensagem.
- *
- * Dois provedores servem o MESMO canal `whatsapp`: a API oficial da Meta e o
- * uazapi. A loja escolhe qual usar em cada numero, e os dois implementam a
- * mesma interface `ChannelAdapter` — quem envia nao precisa saber a diferenca.
- */
-export const CANAL_DO_PROVEDOR: Partial<Record<Provedor, string>> = {
-  whatsapp_oficial: "whatsapp",
-  uazapi: "whatsapp",
-  instagram: "instagram",
-  facebook: "facebook",
-  tiktok_shop: "tiktok",
-}
-
-/** Estados possiveis de uma conta conectada. */
-export const STATUS = ["desconectado", "conectado", "expirado", "erro"] as const
-
-/**
- * Provedores que sao da REDE, nao de uma loja: conta unica, e a separacao por
- * loja acontece dentro do provedor (Bling usa deposito — decisao 6).
- */
-export const PROVEDORES_DA_REDE: readonly Provedor[] = ["bling"]
-
-export function ehDaRede(provedor: string): boolean {
-  return PROVEDORES_DA_REDE.includes(provedor as Provedor)
-}
-
-/**
- * Chaves de credencial que cada provedor precisa para o envio funcionar.
- *
- * Sem isto declarado, quem conecta uma conta pela tela descobre o nome da chave
- * por tentativa e erro — e uma credencial com a chave errada e gravada,
- * cifrada, e so falha na hora de enviar.
- *
- * `bling` fica de fora: quem preenche e o proprio OAuth, nao a mao.
- */
-export const CHAVES_ESPERADAS: Partial<Record<Provedor, string[]>> = {
-  whatsapp_oficial: ["phone_id", "access_token"],
-  /** Token da INSTANCIA. Da acesso total aquele numero — nao ha escopo. */
-  uazapi: ["token"],
-  instagram: ["page_access_token"],
-  facebook: ["page_access_token"],
-}
+export * from "./integracoes-catalogo"
+import { PROVEDORES, CHAVES_ESPERADAS, STATUS, type Provedor } from "./integracoes-catalogo"
 
 /** Chaves exigidas que nao vieram. Vazio = tudo certo. */
 export function chavesFaltando(provedor: string, credenciais: Record<string, string>): string[] {

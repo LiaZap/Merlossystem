@@ -255,12 +255,15 @@ describe("PUT da conversa nao aceita qualquer coisa", () => {
 describe("lista de usuarios nao vaza dado sensivel", () => {
   const rota = ler("src", "app", "api", "usuarios", "route.ts")
 
-  it("o select nao traz senha nem e-mail", () => {
+  it("o select da leitura publica vem da constante minima", () => {
     // A rota e aberta a todo atendente (precisa dela para transferir), entao o
     // que ela devolve tem que ser o minimo para desenhar um seletor.
-    expect(rota).toContain("select:")
-    expect(rota).not.toContain("passwordHash")
-    expect(rota).not.toMatch(/email:\s*true/)
+    //
+    // A checagem e pela constante, nao pelo texto do arquivo: o POST da mesma
+    // rota grava `passwordHash` legitimamente ao cadastrar. Quais campos SAEM
+    // esta travado em tests/usuarios-fase4.test.ts, sobre CAMPOS_PUBLICOS.
+    expect(rota).toContain("CAMPOS_PUBLICOS")
+    expect(rota).not.toMatch(/select:\s*\{[^}]*passwordHash/)
   })
 
   it("filtra apenas usuarios ativos", () => {

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { SkeletonTable } from "@/components/ui/skeleton"
 import { toast } from "sonner"
+import { ConectarConta } from "./_components/conectar-conta"
 
 interface Integracao {
   id: string
@@ -146,7 +147,13 @@ export default function IntegracoesPage() {
             Contas conectadas por loja. As credenciais ficam cifradas e nunca são exibidas.
           </p>
         </div>
-        <div className="flex gap-2">
+        {/* Dois caminhos porque os provedores conectam de jeitos diferentes:
+            Bling e TikTok por OAuth (o consentimento acontece no site deles),
+            os canais de mensagem por token colado a mao. Ate aqui so os de
+            OAuth tinham botao, e Instagram, Facebook e os dois WhatsApp nao
+            tinham nenhuma forma de ser conectados pela interface. */}
+        <div className="flex flex-wrap gap-2">
+          <ConectarConta onConectado={carregar} />
           <Button variant="outline" onClick={() => conectar("bling")}>
             {integracoes.some((i) => i.provedor === "bling") ? "Reconectar Bling" : "Conectar Bling"}
           </Button>
