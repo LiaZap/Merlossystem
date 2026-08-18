@@ -46,6 +46,17 @@ const RULES = [
     msg: "SQLite detectado. Esta base usa PostgreSQL em todos os ambientes.",
   },
   {
+    id: "texto-cru",
+    // Dois defeitos de encoding com a mesma consequencia: texto errado na tela.
+    //   1. Escape literal: `Automa\u00e7\u00f5es` chegou a ser renderizado
+    //      exatamente assim. Fora de uma string, `\u` nao e interpretado.
+    //   2. Mojibake: o editor le o arquivo UTF-8 como cp1252 e regrava; um
+    //      acento vira dois caracteres (`\u00c3` + outro).
+    // Os arquivos sao UTF-8. Escreva o caractere acentuado direto.
+    re: /\\u00[89a-fA-F][0-9a-fA-F]|[\u00c3\u00c2][\u0080-\u00bf]|\u00e2\u20ac[\u0093\u0094\u009d\u00a6]/,
+    msg: "Texto acentuado quebrado (escape unicode literal ou mojibake). Escreva o caractere acentuado direto: os arquivos sao UTF-8.",
+  },
+  {
     id: "delete-fisico",
     re: /\bdb\.delete\s*\(|\.deleteMany\s*\(/,
     msg: "Delete fisico detectado. Use soft delete: set is_deleted=true, deleted_at=now().",
@@ -131,7 +142,7 @@ async function main() {
   const lines = text.split("\n");
   for (const rule of RULES) {
     for (let i = 0; i < lines.length; i++) {
-      if (isComment(lines[i])) continue;
+      if (isComment(lines[i]) && rule.id !== "texto-cru") continue;
       if (!rule.re.test(lines[i])) continue;
       if (rule.warnOnly) {
         process.stderr.write(`[guard:aviso] [${rule.id}] L~${i + 1}: ${rule.msg}\n`);

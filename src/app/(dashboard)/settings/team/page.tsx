@@ -52,7 +52,7 @@ const initialMembers: TeamMember[] = [
   },
   {
     id: "2",
-    name: "J\u00e9ssica Oliveira",
+    name: "Jéssica Oliveira",
     email: "jessica@merlosstore.com",
     role: "agent",
     status: "active",
@@ -144,7 +144,7 @@ export default function SettingsTeamPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <Breadcrumb items={[{ label: "Configurações", href: "/settings/general" }, { label: "Equipe" }]} className="mb-4" />
+          <Breadcrumb items={[{ label: "Configurações", href: "/settings" }, { label: "Equipe" }]} className="mb-4" />
           <h1 className="text-2xl font-bold">Equipe</h1>
           <p className="text-muted-foreground mt-1">
             Gerencie os membros da sua equipe
@@ -163,7 +163,7 @@ export default function SettingsTeamPage() {
               </DialogTitle>
               <DialogDescription>
                 {editingMember
-                  ? "Atualize as informa\u00e7\u00f5es do membro da equipe."
+                  ? "Atualize as informações do membro da equipe."
                   : "Preencha os dados para enviar um convite."}
               </DialogDescription>
             </DialogHeader>
@@ -219,7 +219,7 @@ export default function SettingsTeamPage() {
               <TableHead>Email</TableHead>
               <TableHead>Cargo</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">A\u00e7\u00f5es</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

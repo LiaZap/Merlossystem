@@ -1,14 +1,5 @@
 import Link from "next/link"
-import {
-  Store,
-  Plug,
-  Users,
-  Settings as Cog,
-  MessageSquare,
-  Timer,
-  Zap,
-  ShieldCheck,
-} from "lucide-react"
+import { Store, Plug, Users, Timer, ShieldCheck } from "lucide-react"
 
 /**
  * Indice das configuracoes.
@@ -46,28 +37,10 @@ const AREAS = [
     soAdmin: true,
   },
   {
-    href: "/settings/general",
-    icone: Cog,
-    titulo: "Geral",
-    descricao: "Nome, logo e horário de funcionamento.",
-  },
-  {
-    href: "/settings/channels",
-    icone: MessageSquare,
-    titulo: "Canais",
-    descricao: "Como cada canal de atendimento se comporta.",
-  },
-  {
     href: "/settings/sla",
     icone: Timer,
     titulo: "SLA",
-    descricao: "Prazos de resposta e o que dispara alerta.",
-  },
-  {
-    href: "/settings/automations",
-    icone: Zap,
-    titulo: "Automações",
-    descricao: "Respostas e ações automáticas.",
+    descricao: "Prazos de resposta que disparam alerta. Somente leitura.",
   },
   {
     href: "/settings/lgpd",

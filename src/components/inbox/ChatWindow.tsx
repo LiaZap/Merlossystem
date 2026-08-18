@@ -11,7 +11,7 @@ import { ChannelBadge } from "./ChannelBadge"
 import { MediaPreview } from "@/components/chat/MediaPreview"
 import { MediaBar } from "@/components/chat/MediaBar"
 import { GalleryModal } from "@/components/chat/GalleryModal"
-import { AiSuggestion } from "@/components/chat/AiSuggestion"
+// IA fora de escopo (18/08/2026) — ver o bloco comentado no final do componente.
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -296,16 +296,18 @@ export function ChatWindow({
         </div>
       </ScrollArea>
 
-      {/* AI Suggestion */}
-      <div className="px-3 pt-2">
+      {/*
+        Sugestao por IA — FORA DE ESCOPO neste projeto (decisao de 18/08/2026).
+
+        Escondido, nao removido: o componente e as rotas `/api/ai/*` continuam
+        no repositorio. Esconder e reversivel; apagar nao, e a decisao pode
+        mudar. Sem a chave da Anthropic configurada isto so mostraria erro.
+
         <AiSuggestion
           conversationId={conversationId}
-          onSend={(text) => {
-            setInput(text)
-            handleSend()
-          }}
+          onSend={(text) => { setInput(text); handleSend() }}
         />
-      </div>
+      */}
 
       {/* Media Bar */}
       <MediaBar

@@ -36,7 +36,7 @@ export default function AuthLayout({
             Plataforma Unificada de Atendimento
           </h2>
           <p className="text-neutral-500 text-sm leading-relaxed">
-            CRM inteligente com IA para gestão de clientes, vendas e atendimento multicanal.
+            Conversas, clientes e pedidos das duas lojas num lugar só.
           </p>
 
           {/* Decorative dots */}

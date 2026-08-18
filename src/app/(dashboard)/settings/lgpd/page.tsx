@@ -45,7 +45,7 @@ export default function SettingsLgpdPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Breadcrumb items={[{ label: "Configurações", href: "/settings/general" }, { label: "LGPD" }]} className="mb-4" />
+        <Breadcrumb items={[{ label: "Configurações", href: "/settings" }, { label: "LGPD" }]} className="mb-4" />
         <h1 className="text-2xl font-bold">LGPD — Privacidade e Dados</h1>
         <p className="text-muted-foreground mt-1">
           Gerencie consentimento, retenção e direitos dos titulares de dados.

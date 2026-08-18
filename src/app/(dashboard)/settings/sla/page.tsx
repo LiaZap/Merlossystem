@@ -41,7 +41,7 @@ export default function SettingsSlaPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Breadcrumb items={[{ label: "Configurações", href: "/settings/general" }, { label: "SLA" }]} className="mb-4" />
+        <Breadcrumb items={[{ label: "Configurações", href: "/settings" }, { label: "SLA" }]} className="mb-4" />
         <h1 className="text-2xl font-bold">SLA — Acordo de Nível de Serviço</h1>
         <p className="text-muted-foreground mt-1">
           Configure os tempos máximos de resposta por canal e prioridade.
