@@ -110,14 +110,63 @@ export default function BroadcastsPage() {
     }
   }
 
+  const [enviando, setEnviando] = useState<string | null>(null)
+  const [progresso, setProgresso] = useState<{ enviados: number; total: number } | null>(null)
+
   async function updateStatus(id: string, status: string) {
-    await fetch(`/api/broadcasts/${id}`, {
+    const res = await fetch(`/api/broadcasts/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     })
-    toast.success(`Status atualizado`)
-    load()
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      toast.error(d.error || "Nao foi possivel mudar o status.")
+      return
+    }
+    await load()
+    // Marcar "sending" nao envia nada por si — era exatamente o defeito: a
+    // campanha ficava eternamente "enviando" e nenhuma mensagem saia. Quem
+    // envia e o laco abaixo, um lote por chamada.
+    if (status === "sending") void dispararEmLotes(id)
+  }
+
+  /**
+   * Envia a campanha, um lote por chamada, ate acabar.
+   *
+   * O laco vive aqui e nao no servidor porque um handler que envia mil
+   * mensagens numa requisicao estoura o tempo limite e deixa a campanha em
+   * estado desconhecido. Cada chamada e curta e o que ja saiu fica gravado:
+   * fechar a aba no meio PAUSA o envio, nao o corrompe — reabrir e clicar em
+   * retomar continua de onde parou, sem reenviar para quem ja recebeu.
+   */
+  async function dispararEmLotes(id: string) {
+    setEnviando(id)
+    try {
+      for (;;) {
+        const res = await fetch(`/api/broadcasts/${id}/disparar`, { method: "POST" })
+        const d = await res.json().catch(() => ({}))
+
+        if (!res.ok) {
+          toast.error(d.error || "Falha ao enviar a campanha.")
+          break
+        }
+
+        setProgresso({ enviados: d.enviados, total: d.total })
+        await load()
+
+        if (d.concluida || d.restantes === 0) {
+          toast.success(
+            `Campanha concluida: ${d.enviados} enviadas` +
+              (d.falhas > 0 ? `, ${d.falhas} com falha.` : ".")
+          )
+          break
+        }
+      }
+    } finally {
+      setEnviando(null)
+      setProgresso(null)
+    }
   }
 
   async function handleDelete(id: string) {
@@ -230,17 +279,24 @@ export default function BroadcastsPage() {
                   <TableCell>
                     <div className="flex gap-1">
                       {b.status === "draft" && (
-                        <Button variant="ghost" size="icon" aria-label="Iniciar campanha" onClick={() => updateStatus(b.id, "sending")} title="Iniciar envio">
+                        <Button variant="ghost" size="icon" aria-label="Iniciar campanha" disabled={enviando !== null} onClick={() => updateStatus(b.id, "sending")} title="Iniciar envio">
                           <Play className="h-4 w-4 text-green-500" />
                         </Button>
                       )}
                       {b.status === "sending" && (
-                        <Button variant="ghost" size="icon" aria-label="Pausar campanha" onClick={() => updateStatus(b.id, "paused")} title="Pausar">
-                          <Pause className="h-4 w-4 text-orange-500" />
-                        </Button>
+                        <>
+                          {enviando === b.id && progresso && (
+                            <span className="mr-2 self-center text-xs tabular-nums text-muted-foreground">
+                              {progresso.enviados}/{progresso.total}
+                            </span>
+                          )}
+                          <Button variant="ghost" size="icon" aria-label="Pausar campanha" onClick={() => updateStatus(b.id, "paused")} title="Pausar">
+                            <Pause className="h-4 w-4 text-orange-500" />
+                          </Button>
+                        </>
                       )}
                       {b.status === "paused" && (
-                        <Button variant="ghost" size="icon" aria-label="Iniciar campanha" onClick={() => updateStatus(b.id, "sending")} title="Retomar">
+                        <Button variant="ghost" size="icon" aria-label="Iniciar campanha" disabled={enviando !== null} onClick={() => updateStatus(b.id, "sending")} title="Retomar">
                           <Play className="h-4 w-4 text-green-500" />
                         </Button>
                       )}

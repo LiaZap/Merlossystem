@@ -31,6 +31,7 @@ export const ACOES = [
   "conversa_transferida",
   "pedido_lancado_masc",
   "contato_apagado_lgpd",
+  "campanha_disparada",
 ] as const
 export type Acao = (typeof ACOES)[number]
 

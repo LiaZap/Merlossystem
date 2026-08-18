@@ -39,3 +39,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS messages_store_external_id
 --
 -- Reaplicavel: soltar um NOT NULL que ja foi solto nao da erro.
 ALTER TABLE activity_logs ALTER COLUMN store_id DROP NOT NULL;
+
+-- Conta de saida da campanha.
+--
+-- Sem esta coluna o disparo teria que adivinhar entre as contas da loja, e numa
+-- loja com dois numeros (vendas e SAC) a campanha de marketing podia sair pelo
+-- numero de atendimento. Nula em campanha criada antes desta coluna existir.
+--
+-- Reaplicavel: `IF NOT EXISTS` no ADD COLUMN.
+ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS store_integracao_id TEXT;
+CREATE INDEX IF NOT EXISTS broadcasts_store_integracao_id
+  ON broadcasts (store_integracao_id);

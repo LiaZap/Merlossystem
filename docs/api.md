@@ -453,6 +453,7 @@ servidor.
 | | POST | Zod: `name`, `templateId`, `channel` (padrao `whatsapp`), `segmentFilter`, `content`, `mediaIds[]`, `scheduledFor`. O `segmentFilter` aceita `tags` (`hasEvery`), `preferred_size`, `min_spent` e `max_days_since_purchase`; conta os destinatarios sempre com `optOut: false`. Status vira `scheduled` se houver data, senao `draft` |
 | `/api/broadcasts/[id]` | GET | Campanha + template + ate 50 destinatarios |
 | | PUT | `status` (`sending` grava `startedAt`, `completed` grava `completedAt`), `name`, `scheduledFor` |
+| `/api/broadcasts/[id]/disparar` | POST | Processa **um** lote da campanha e devolve `{status,total,enviados,falhas,restantes,concluida}`. Reserva as linhas com `for update skip locked` antes de enviar, então chamadas simultâneas não entregam em dobro. `409` se a campanha não está `sending`; `422` se não tem conta de envio definida (e a campanha é pausada). Quem chama repete enquanto houver `restantes` — ver ADR 0007 |
 | | DELETE | **Delete fisico**: apaga `BroadcastRecipient` e depois a campanha |
 | `/api/scheduled` | GET | Filtros `status`, `triggerType`, `contactId`. Ordena por `scheduledFor` asc, teto de 50 |
 | | POST | Zod: `contactId`, `content`, `scheduledFor` (ISO), `triggerType` (`manual`, `follow_up`, `post_sale`, `abandoned`, `reactivation`, `birthday`, `promotion`), `templateId`, `templateVars[]`, `mediaIds[]` |

@@ -83,7 +83,8 @@ model StoreIntegracao {
   ultimoErro          String?   @map("ultimo_erro")
   ultimaSincronizacao DateTime? @map("ultima_sincronizacao")
 
-  conversas Conversation[]
+  conversas   Conversation[]
+  broadcasts  Broadcast[]
 
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
@@ -713,6 +714,14 @@ model Broadcast {
   name            String
   templateId      String    @map("template_id")
   channel         String    @default("whatsapp")
+  /// Por qual CONTA a campanha sai — qual numero de WhatsApp.
+  ///
+  /// Sem isto o sistema teria que adivinhar entre as contas da loja, e numa
+  /// loja com dois numeros (vendas e SAC) o disparo de marketing poderia sair
+  /// pelo numero de atendimento. O projeto ja decidiu o contrario para as
+  /// respostas (a conversa responde pela conta de entrada); campanha segue a
+  /// mesma regra, so que a escolha e explicita na criacao.
+  storeIntegracaoId String? @map("store_integracao_id")
   segmentFilter   Json      @map("segment_filter")
   content         String?
   mediaIds        String[]  @default([]) @map("media_ids")
@@ -736,6 +745,7 @@ model Broadcast {
   modifiedBy    String?   @map("modified_by")
 
   template   WhatsappTemplate     @relation(fields: [templateId], references: [id])
+  integracao StoreIntegracao?     @relation(fields: [storeIntegracaoId], references: [id])
   creator    User?                @relation("BroadcastCreator", fields: [createdBy], references: [id])
   recipients BroadcastRecipient[]
   store      Store                @relation(fields: [storeId], references: [id])
@@ -749,7 +759,11 @@ model BroadcastRecipient {
   broadcastId  String    @map("broadcast_id")
   contactId    String    @map("contact_id")
   status       String    @default("pending")
-  // pending | sent | delivered | read | replied | failed
+  // pending | sending | sent | delivered | read | replied | failed
+  //
+  // `sending` e o estado entre RESERVAR a linha e receber a resposta do canal.
+  // Sem ele, dois processamentos simultaneos pegariam o mesmo destinatario e a
+  // cliente receberia a campanha duas vezes.
   externalId   String?   @map("external_id")
   sentAt       DateTime? @map("sent_at")
   deliveredAt  DateTime? @map("delivered_at")

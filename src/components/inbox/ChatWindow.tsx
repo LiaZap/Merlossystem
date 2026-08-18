@@ -8,11 +8,13 @@ import { Send, StickyNote, Zap, ChevronUp } from "lucide-react"
 import { CabecalhoConversa } from "./CabecalhoConversa"
 import { BolhaMensagem, type Mensagem } from "./BolhaMensagem"
 import { MenuAtalhos } from "./MenuAtalhos"
+import { SeletorProduto } from "./SeletorProduto"
 import { MediaBar } from "@/components/chat/MediaBar"
 import { GalleryModal } from "@/components/chat/GalleryModal"
 // IA fora de escopo (18/08/2026) — ver o bloco comentado no fim do arquivo.
 import { armarAviso, tocarBipe, notificarSeEscondido } from "@/lib/chat/aviso-sonoro"
 import { mesclarMensagens } from "@/lib/chat/mesclar"
+import { subirEEnviar, enviarDaBiblioteca } from "@/lib/chat/midia"
 import { toast } from "sonner"
 
 const PAGINA = 40
@@ -55,6 +57,7 @@ export function ChatWindow({
   const [enviando, setEnviando] = useState(false)
   const [reenviando, setReenviando] = useState<string | null>(null)
   const [galeriaAberta, setGaleriaAberta] = useState(false)
+  const [seletorProdutoAberto, setSeletorProdutoAberto] = useState(false)
   const [temMais, setTemMais] = useState(false)
   const [carregandoAnteriores, setCarregandoAnteriores] = useState(false)
 
@@ -290,34 +293,15 @@ export function ChatWindow({
   // ------------------------------------------------------------------ midia
 
   async function enviarMidia(arquivo: File) {
-    const form = new FormData()
-    form.append("file", arquivo)
-    form.append("folder", "chat")
-
-    const upload = await fetch("/api/media/upload", { method: "POST", body: form })
-    if (!upload.ok) {
-      const erro = await upload.json().catch(() => ({}))
-      toast.error(erro.error || "Erro ao enviar o arquivo.")
-      return
-    }
-    const arquivoSalvo = await upload.json()
-
-    const res = await fetch("/api/media/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversationId, mediaFileIds: [arquivoSalvo.id] }),
-    })
-    if (!res.ok) toast.error("Arquivo salvo, mas o canal recusou a mensagem.")
+    const r = await subirEEnviar(conversationId, arquivo)
+    if (!r.ok) toast.error(r.erro)
     await carregar()
     requestAnimationFrame(irParaOFim)
   }
 
   async function enviarDaGaleria(ids: string[], legenda?: string) {
-    await fetch("/api/media/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversationId, mediaFileIds: ids, caption: legenda }),
-    })
+    const r = await enviarDaBiblioteca(conversationId, ids, legenda)
+    if (!r.ok) toast.error(r.erro)
     await carregar()
     requestAnimationFrame(irParaOFim)
   }
@@ -420,7 +404,7 @@ export function ChatWindow({
         onVideoSelect={enviarMidia}
         onFileSelect={enviarMidia}
         onGalleryOpen={() => setGaleriaAberta(true)}
-        onProductSelect={() => toast.info("Seletor de produto (Fase 6)")}
+        onProductSelect={() => setSeletorProdutoAberto(true)}
         onQuickReply={() => {
           setTexto("/")
           textareaRef.current?.focus()
@@ -490,6 +474,20 @@ export function ChatWindow({
         open={galeriaAberta}
         onOpenChange={setGaleriaAberta}
         onSend={enviarDaGaleria}
+      />
+
+      {/* Coloca o texto no campo em vez de enviar direto: a vendedora quase
+          sempre acrescenta uma frase ("esse ficou lindo em voce") antes de
+          mandar, e enviar sozinho tiraria essa chance. */}
+      <SeletorProduto
+        aberto={seletorProdutoAberto}
+        onFechar={() => setSeletorProdutoAberto(false)}
+        onEscolher={(texto) => {
+          setTexto((atual) => (atual ? `${atual}
+
+${texto}` : texto))
+          textareaRef.current?.focus()
+        }}
       />
     </div>
   )

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { filtroDoSegmento } from "@/lib/broadcasts/disparo"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
@@ -6,6 +7,8 @@ import { escopoDaLoja, lojaAtiva, lojaParaGravar, faltaLoja, foraDaLoja } from "
 import { z } from "zod"
 
 const broadcastSchema = z.object({
+  /** Por qual conta a campanha sai. Obrigatoria quando a loja tem mais de uma. */
+  storeIntegracaoId: z.string().optional().nullable(),
   name: z.string().min(1),
   templateId: z.string(),
   channel: z.string().default("whatsapp"),
@@ -58,28 +61,30 @@ export async function POST(req: Request) {
     })
     if (!template) return foraDaLoja("Template")
 
-    // Count recipients based on segment filter
-    const filter = data.segmentFilter as Record<string, unknown>
-    // A contagem de destinatarios tambem e por loja: campanha do Centro nao
-    // conta cliente do Cerro Azul.
-    const contactWhere: Record<string, unknown> = { optOut: false, storeId }
-
-    if (filter.tags && Array.isArray(filter.tags) && filter.tags.length > 0) {
-      contactWhere.tags = { hasEvery: filter.tags as string[] }
-    }
-    if (filter.preferred_size) {
-      contactWhere.preferredSize = filter.preferred_size
-    }
-    if (filter.min_spent) {
-      contactWhere.totalSpent = { gte: filter.min_spent }
-    }
-    if (filter.max_days_since_purchase) {
-      const since = new Date()
-      since.setDate(since.getDate() - (filter.max_days_since_purchase as number))
-      contactWhere.lastContactAt = { gte: since }
-    }
-
+    // O MESMO filtro que o disparo usa (lib/broadcasts/disparo.ts). Quando a
+    // contagem e o envio tinham cada um a sua copia, "vai para 300 clientes" e
+    // "saiu para 287" divergiam sem ninguem entender por que.
+    const contactWhere = filtroDoSegmento(storeId, data.segmentFilter)
     const recipientCount = await prisma.contact.count({ where: contactWhere })
+
+    // A conta de envio tem que ser da loja. O id vem do corpo do request.
+    let contaId: string | null = data.storeIntegracaoId ?? null
+    if (contaId) {
+      const conta = await prisma.storeIntegracao.findFirst({
+        where: { id: contaId, storeId, isDeleted: false },
+        select: { id: true },
+      })
+      if (!conta) return foraDaLoja("Conta de envio")
+    } else {
+      // Loja com UMA conta do canal: usar aquela nao e adivinhar. Com duas ou
+      // mais, a escolha fica para quem cria — mandar marketing pelo numero do
+      // SAC e um erro que so aparece depois de a cliente receber.
+      const contas = await prisma.storeIntegracao.findMany({
+        where: { storeId, isDeleted: false, provedor: { in: ["whatsapp_oficial", "uazapi"] } },
+        select: { id: true },
+      })
+      if (contas.length === 1) contaId = contas[0].id
+    }
 
     const broadcast = await prisma.broadcast.create({
       data: {
@@ -87,6 +92,7 @@ export async function POST(req: Request) {
         name: data.name,
         templateId: data.templateId,
         channel: data.channel,
+        storeIntegracaoId: contaId,
         segmentFilter: data.segmentFilter as Prisma.InputJsonValue,
         content: data.content || null,
         mediaIds: data.mediaIds,
