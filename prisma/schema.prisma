@@ -4,6 +4,9 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // A URL NAO entra aqui: o Prisma 7 removeu `url` da schema (P1012). Ela vem
+  // de `prisma.config.ts`, que por isso precisa estar na imagem de producao
+  // para o `prisma db push` saber onde e o banco.
 }
 
 // ============================================================

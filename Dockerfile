@@ -57,20 +57,39 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# O standalone JA traz `@prisma`, `.prisma`, `pg` e `sharp` — verificado no
-# build, nao suposto. O que ele NAO traz e o CLI do `prisma`, que e
-# devDependency e nao e importado por codigo.
+# O standalone JA traz `@prisma/client`, `.prisma`, `pg` e `sharp` — verificado
+# no build, nao suposto. O que falta e o CLI do `prisma` (devDependency, nao
+# importado por codigo) e as dependencias dele.
 #
-# Sem o CLI na imagem, `npx prisma db push` tenta BAIXAR o pacote do registry
-# de dentro do container e morre com EACCES. Custa ~60 MB e e o que torna a
-# migracao possivel sem subir um container separado so para isso.
+# Sem o CLI, `npx prisma db push` tenta BAIXAR o pacote do registry de dentro
+# do container e morre com EACCES. Com o CLI mas sem `@prisma/engines`, morre
+# com "Cannot find module '@prisma/engines'".
+#
+# Os pacotes sao listados um a um de proposito. Copiar `@prisma` inteiro
+# custaria 161 MB e traria `studio-core` (36 MB) e `query-plan-executor`, que
+# `db push` nao usa. Assim sao ~45 MB.
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/engines-version ./node_modules/@prisma/engines-version
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/fetch-engine ./node_modules/@prisma/fetch-engine
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/get-platform ./node_modules/@prisma/get-platform
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/debug ./node_modules/@prisma/debug
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/config ./node_modules/@prisma/config
 
 # Schema e scripts para rodar `prisma db push && node scripts/db-constraints.mjs`
 # apos o primeiro deploy.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
+
+# `prisma.config.mjs` e obrigatorio, nao conveniencia: o Prisma 7 removeu `url`
+# da schema (P1012), entao e ELE quem diz onde e o banco.
+#
+# `.mjs` e nao `.ts`: transpilar o config exigiria `typescript` na imagem.
+# E ele importa `dotenv`, que o tracing do Next nao inclui porque nenhum codigo
+# da aplicacao usa.
+COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.mjs ./prisma.config.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/dotenv ./node_modules/dotenv
 
 USER nextjs
 EXPOSE 3005
