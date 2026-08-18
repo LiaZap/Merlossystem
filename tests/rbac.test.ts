@@ -16,8 +16,8 @@ const pares = rotas.flatMap((r) =>
 )
 
 describe("cobertura", () => {
-  it("as 53 rotas protegidas entram na avaliacao", () => {
-    expect(rotas.length).toBe(53)
+  it("as 55 rotas protegidas entram na avaliacao", () => {
+    expect(rotas.length).toBe(55)
     expect(pares.length).toBeGreaterThan(60)
   })
 
@@ -143,13 +143,29 @@ describe("casos que motivaram o RBAC", () => {
     expect(podeAcessar("vendedor", "/api/templates/abc123", "DELETE")).toBe(false)
   })
 
-  it("configuracao e usuario ficam so com admin — nem gerente entra", () => {
-    for (const caminho of ["/api/integracoes", "/api/integracoes/abc123", "/api/usuarios"]) {
+  it("configuracao fica so com admin — nem gerente entra", () => {
+    for (const caminho of ["/api/integracoes", "/api/integracoes/abc123"]) {
       for (const metodo of ["GET", "POST", "PUT", "DELETE"]) {
         expect(podeAcessar("admin", caminho, metodo), `admin ${metodo} ${caminho}`).toBe(true)
         expect(podeAcessar("gerente", caminho, metodo), `gerente ${metodo} ${caminho}`).toBe(false)
         expect(podeAcessar("vendedor", caminho, metodo), `vendedor ${metodo} ${caminho}`).toBe(false)
       }
+    }
+  })
+
+  it("usuario: todos leem a lista de colegas; so admin cadastra", () => {
+    // Mesmo desenho de `/api/lojas` logo abaixo. Transferir conversa e trabalho
+    // de atendimento: com o GET fechado em admin, o seletor de transferencia
+    // ficava vazio para o vendedor, que e justamente quem transfere. A rota
+    // devolve so nome, papel e avatar, filtrados pela loja de quem pergunta.
+    for (const papel of ["admin", "gerente", "vendedor", "viewer"]) {
+      expect(podeAcessar(papel, "/api/usuarios", "GET"), `${papel} GET`).toBe(true)
+    }
+    // Escrever continua privilegio de admin: trocar papel escala privilegio.
+    for (const metodo of ["POST", "PUT", "DELETE"]) {
+      expect(podeAcessar("admin", "/api/usuarios", metodo)).toBe(true)
+      expect(podeAcessar("gerente", "/api/usuarios", metodo), `gerente ${metodo}`).toBe(false)
+      expect(podeAcessar("vendedor", "/api/usuarios", metodo), `vendedor ${metodo}`).toBe(false)
     }
   })
 

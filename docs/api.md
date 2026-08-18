@@ -195,6 +195,7 @@ rede inteira.
 | `/api/lojas` | POST | Cadastra loja. O `slug` sai do nome quando nao vem |
 | `/api/lojas/[id]` | PUT | Renomeia, troca o `slug` e define o `blingDepositoId` |
 | `/api/lojas/[id]` | DELETE | Desativa (soft delete). Recusa com `409` se ainda houver usuario ativo ou pedido na loja |
+| `/api/usuarios` | GET | Colegas que atendem a loja, para o seletor de transferencia do chat. Devolve so `id`, `name`, `role`, `avatarUrl` e `storeId` — nunca e-mail ou senha. `storeId` nulo (admin/gerente) entra na lista das duas lojas. **Leitura aberta a todo papel**, escrita so admin (docs/rbac.md) |
 | `/api/integracoes/bling/depositos` | GET | Depositos do Bling, para a tela escolher em vez de pedir id digitado |
 
 **Escrever e configuracao: so admin.** Ler segue o padrao, porque o vendedor
@@ -370,9 +371,10 @@ servidor.
 |------|--------|-----------|
 | `/api/conversations` | GET | Filtros `channel`, `status` (padrao `open` + `pending`), `assignedTo`, `priority`, `search` (dados do contato), `page`, `limit` (30). Inclui contato e agente |
 | `/api/conversations/[id]` | GET | Conversa + contato completo + agente |
-| | PUT | Sem Zod. Aceita `status`, `assignedTo`, `priority` e `markRead` (zera `unreadCount`) |
+| | PUT | Zod com enum fechado: `status` (`open`/`pending`/`resolved`/`archived`), `priority` (`low`/`medium`/`high`/`urgent`), `assignedTo` e `markRead` (zera `unreadCount`). `assignedTo` e conferido contra a loja da conversa — destinatario de outra loja responde `422` |
 | `/api/messages` | GET | Exige `?conversationId` (senao `400`). Paginacao por cursor `?before` (ISO), `limit` 50. Busca desc e devolve em ordem cronologica |
-| | POST | Zod: `conversationId`, `content`, `contentType`, `mediaFileId`, `mediaCaption`, `isInternalNote` (o remetente vem da sessao). Nota interna e gravada e **nao** vai para o canal. Resolve o destinatario pelo canal (`whatsappId`/`phone`, `instagramId`, `facebookId`, `tiktokId`) e envia pelo adapter de `src/lib/channels`; persiste com `saveOutgoingMessage` |
+| | POST | Zod: `conversationId`, `content`, `contentType`, `mediaFileId`, `mediaCaption`, `isInternalNote` (o remetente vem da sessao). Nota interna e gravada e **nao** vai para o canal. A entrega e delegada a `entregarNoCanal` (`src/lib/chat/enviar.ts`), que resolve o destinatario, a conta de entrada e a URL assinada. Responde **201 mesmo quando o canal recusa**: a mensagem e gravada com `externalStatus: "failed"` e o motivo em `metadata.erroDeEnvio`, para a atendente ver a bolha e reenviar |
+| `/api/messages/[id]/reenviar` | POST | Reenvia pelo canal uma mensagem que falhou. **Edita** a mensagem existente em vez de criar outra, para a conversa nao acumular uma bolha por tentativa. Recusa com `409` se a mensagem nao estiver `failed` ou se for nota interna |
 
 ## CRM — funil de vendas
 

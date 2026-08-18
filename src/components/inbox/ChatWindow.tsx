@@ -1,298 +1,404 @@
 "use client"
 
-import { useEffect, useState, useRef, useCallback } from "react"
-import { formatDistanceToNow } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, StickyNote, CheckCheck, Check as CheckIcon } from "lucide-react"
-import { ChannelBadge } from "./ChannelBadge"
-import { MediaPreview } from "@/components/chat/MediaPreview"
+import { Send, StickyNote, Zap, ChevronUp } from "lucide-react"
+import { CabecalhoConversa } from "./CabecalhoConversa"
+import { BolhaMensagem, type Mensagem } from "./BolhaMensagem"
+import { MenuAtalhos } from "./MenuAtalhos"
 import { MediaBar } from "@/components/chat/MediaBar"
 import { GalleryModal } from "@/components/chat/GalleryModal"
-// IA fora de escopo (18/08/2026) — ver o bloco comentado no final do componente.
+// IA fora de escopo (18/08/2026) — ver o bloco comentado no fim do arquivo.
+import { armarAviso, tocarBipe, notificarSeEscondido } from "@/lib/chat/aviso-sonoro"
+import { mesclarMensagens } from "@/lib/chat/mesclar"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
 
-interface MessageMedia {
-  id: string
-  fileType: string | null
-  mimeType: string | null
-  caption: string | null
-  transcription: string | null
-  transcriptionStatus: string | null
-  mediaFile: {
-    fileUrl: string
-    thumbnailUrl: string | null
-    originalName: string | null
-    duration: number | null
-  } | null
-  externalUrl: string | null
-}
-
-interface Message {
-  id: string
-  senderType: string
-  content: string | null
-  contentType: string
-  isInternalNote: boolean
-  externalStatus: string | null
-  createdAt: string
-  sender: { id: string; name: string; avatarUrl: string | null } | null
-  media: MessageMedia[]
-}
+const PAGINA = 40
+const INTERVALO_POLLING = 5000
+/** Distancia do fim em que ainda consideramos que a atendente "esta no fim". */
+const FOLGA_DO_FIM = 120
 
 interface ChatWindowProps {
   conversationId: string
   contactName: string
   channel: string
+  /** Avisa a caixa de entrada que a conversa mudou (resolvida, transferida). */
+  onConversaAtualizada?: () => void
 }
 
-function StatusIcon({ status }: { status: string | null }) {
-  if (!status) return null
-  if (status === "read") return <CheckCheck className="h-3 w-3 text-blue-400" />
-  if (status === "delivered") return <CheckCheck className="h-3 w-3 text-neutral-400" />
-  if (status === "sent") return <CheckIcon className="h-3 w-3 text-neutral-400" />
-  return null
+/** Rotulo do dia para o separador do historico. */
+function rotuloDoDia(iso: string): string {
+  const data = new Date(iso)
+  const hoje = new Date()
+  const ontem = new Date(hoje)
+  ontem.setDate(hoje.getDate() - 1)
+  const mesmoDia = (a: Date, b: Date) => a.toDateString() === b.toDateString()
+  if (mesmoDia(data, hoje)) return "Hoje"
+  if (mesmoDia(data, ontem)) return "Ontem"
+  return data.toLocaleDateString("pt-BR", { day: "2-digit", month: "long" })
+}
+
+function porData(a: Mensagem, b: Mensagem) {
+  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
 }
 
 export function ChatWindow({
   conversationId,
   contactName,
   channel,
+  onConversaAtualizada,
 }: ChatWindowProps) {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState("")
-  const [sending, setSending] = useState(false)
-  const [galleryOpen, setGalleryOpen] = useState(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [mensagens, setMensagens] = useState<Mensagem[]>([])
+  const [texto, setTexto] = useState("")
+  const [enviando, setEnviando] = useState(false)
+  const [reenviando, setReenviando] = useState<string | null>(null)
+  const [galeriaAberta, setGaleriaAberta] = useState(false)
+  const [temMais, setTemMais] = useState(false)
+  const [carregandoAnteriores, setCarregandoAnteriores] = useState(false)
 
-  const loadMessages = useCallback(async () => {
-    const res = await fetch(`/api/messages?conversationId=${conversationId}&limit=100`)
-    if (res.ok) {
-      const data = await res.json()
-      setMessages(data)
-    }
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  /** Ultima mensagem conhecida, para detectar chegada sem depender do render. */
+  const ultimaVistaRef = useRef<string | null>(null)
+  /** Sequencial das mensagens otimistas. */
+  const seqRef = useRef(0)
+
+  // ---------------------------------------------------------------- rolagem
+
+  const estaNoFim = useCallback(() => {
+    const v = viewportRef.current
+    if (!v) return true
+    return v.scrollHeight - v.scrollTop - v.clientHeight < FOLGA_DO_FIM
+  }, [])
+
+  const irParaOFim = useCallback(() => {
+    const v = viewportRef.current
+    if (v) v.scrollTop = v.scrollHeight
+  }, [])
+
+  // ------------------------------------------------------------ carregamento
+
+  /** Traz a pagina mais recente e mescla com a tela (ver lib/chat/mesclar). */
+  const carregar = useCallback(async () => {
+    const res = await fetch(
+      `/api/messages?conversationId=${conversationId}&limit=${PAGINA}`
+    )
+    if (!res.ok) return null
+    const recentes: Mensagem[] = await res.json()
+
+    setMensagens((atuais) => mesclarMensagens(atuais, recentes))
+    setTemMais(recentes.length >= PAGINA)
+    return recentes
   }, [conversationId])
 
+  /** Pagina para tras. Preserva a posicao de leitura ao inserir no topo. */
+  async function carregarAnteriores() {
+    const maisAntiga = mensagens.find((m) => !m.pendente)
+    if (!maisAntiga || carregandoAnteriores) return
+
+    setCarregandoAnteriores(true)
+    const v = viewportRef.current
+    const alturaAntes = v?.scrollHeight ?? 0
+    const topoAntes = v?.scrollTop ?? 0
+
+    try {
+      const res = await fetch(
+        `/api/messages?conversationId=${conversationId}&limit=${PAGINA}` +
+          `&before=${encodeURIComponent(maisAntiga.createdAt)}`
+      )
+      if (!res.ok) return
+      const antigas: Mensagem[] = await res.json()
+      if (antigas.length === 0) {
+        setTemMais(false)
+        return
+      }
+
+      // Ordem invertida de proposito: aqui o servidor traz o passado, e o que
+      // esta na tela e mais atual (pode ter status de entrega ja atualizado).
+      setMensagens((atuais) => mesclarMensagens(antigas, atuais))
+      setTemMais(antigas.length >= PAGINA)
+
+      // Sem isto o conteudo inserido acima empurra a leitura para baixo e a
+      // atendente perde o ponto onde estava.
+      requestAnimationFrame(() => {
+        const vv = viewportRef.current
+        if (vv) vv.scrollTop = topoAntes + (vv.scrollHeight - alturaAntes)
+      })
+    } finally {
+      setCarregandoAnteriores(false)
+    }
+  }
+
+  // Troca de conversa: limpa antes de buscar, senao o historico da conversa
+  // anterior fica na tela por um instante — com o nome da outra cliente no topo.
   useEffect(() => {
-    loadMessages()
-    // Mark as read
-    fetch(`/api/conversations/${conversationId}`, {
+    setMensagens([])
+    setTemMais(false)
+    ultimaVistaRef.current = null
+    void carregar().then(() => requestAnimationFrame(irParaOFim))
+  }, [conversationId, carregar, irParaOFim])
+
+  useEffect(() => armarAviso(), [])
+
+
+  // -------------------------------------------------- polling, aviso, lida
+
+  const marcarLida = useCallback(async () => {
+    await fetch(`/api/conversations/${conversationId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ markRead: true }),
     })
-  }, [conversationId, loadMessages])
+    onConversaAtualizada?.()
+  }, [conversationId, onConversaAtualizada])
 
   useEffect(() => {
-    // Scroll to bottom on new messages
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [messages])
+    void marcarLida()
+  }, [marcarLida])
 
-  // Poll for new messages every 5 seconds
   useEffect(() => {
-    const interval = setInterval(loadMessages, 5000)
-    return () => clearInterval(interval)
-  }, [loadMessages])
+    const timer = setInterval(async () => {
+      const colado = estaNoFim()
+      const recentes = await carregar()
+      if (!recentes || recentes.length === 0) return
 
-  async function handleSend(isNote: boolean = false) {
-    if (!input.trim()) return
-    setSending(true)
+      const ultima = recentes[recentes.length - 1]
+      const primeiraLeitura = ultimaVistaRef.current === null
+      const novidade = ultima.id !== ultimaVistaRef.current
+      ultimaVistaRef.current = ultima.id
 
-    // Check for quick reply shortcut
-    let content = input.trim()
-    if (content.startsWith("/") && !isNote) {
-      const shortcut = content.split(" ")[0]
-      const res = await fetch(`/api/quick-replies?search=${encodeURIComponent(shortcut)}`)
-      const replies = await res.json()
-      const match = Array.isArray(replies) ? replies.find((r: { shortcut: string }) => r.shortcut === shortcut) : null
-      if (match) {
-        content = match.content
+      if (!primeiraLeitura && novidade && ultima.senderType === "customer") {
+        tocarBipe()
+        notificarSeEscondido(contactName, ultima.content || "Enviou um anexo")
+        // A conversa esta aberta na tela: o contador de nao lidas tem que zerar
+        // de novo, senao a lista anuncia "1 nao lida" do que ja esta a vista.
+        // Antes isto rodava so na montagem do componente.
+        void marcarLida()
       }
+
+      // Rola sozinho SO se a atendente ja estava no fim. Se estava lendo o
+      // historico, puxar a tela para baixo tira o texto do olho dela.
+      if (colado) requestAnimationFrame(irParaOFim)
+    }, INTERVALO_POLLING)
+    return () => clearInterval(timer)
+  }, [carregar, estaNoFim, irParaOFim, marcarLida, contactName])
+
+  // ------------------------------------------------------------------ envio
+
+  async function enviar(comoNota = false) {
+    const conteudo = texto.trim()
+    if (!conteudo || enviando) return
+
+    // Bolha otimista: aparece na hora. Antes a mensagem so surgia no ciclo
+    // seguinte do polling — ate 5 segundos de tela parada depois do Enter, e a
+    // atendente mandava de novo achando que nao tinha ido.
+    const idLocal = `local:${++seqRef.current}`
+    const otimista: Mensagem = {
+      id: idLocal,
+      senderType: "agent",
+      content: conteudo,
+      contentType: "text",
+      isInternalNote: comoNota,
+      externalStatus: null,
+      createdAt: new Date().toISOString(),
+      sender: null,
+      media: [],
+      pendente: true,
     }
+    setMensagens((m) => [...m, otimista])
+    setTexto("")
+    requestAnimationFrame(irParaOFim)
+    setEnviando(true)
 
-    const res = await fetch("/api/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        conversationId,
-        content,
-        contentType: "text",
-        isInternalNote: isNote,
-      }),
-    })
+    try {
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId,
+          content: conteudo,
+          contentType: "text",
+          isInternalNote: comoNota,
+        }),
+      })
 
-    setSending(false)
-    if (res.ok) {
-      setInput("")
-      loadMessages()
+      if (!res.ok) {
+        const erro = await res.json().catch(() => ({}))
+        // Devolve o texto ao campo: perder o que a atendente escreveu por causa
+        // de uma falha de rede e inaceitavel.
+        setMensagens((m) => m.filter((x) => x.id !== idLocal))
+        setTexto(conteudo)
+        toast.error(erro.error || "Não foi possível enviar. Texto devolvido ao campo.")
+        return
+      }
+
+      const salva: Mensagem = await res.json()
+      setMensagens((m) => m.map((x) => (x.id === idLocal ? salva : x)).sort(porData))
+      onConversaAtualizada?.()
+
+      // 201 com `failed` = a tentativa foi gravada e o canal recusou. A bolha
+      // vermelha com "tentar de novo" ja esta na tela; o toast diz o motivo.
+      if (salva.externalStatus === "failed") {
+        toast.error(salva.metadata?.erroDeEnvio || "O canal recusou a mensagem.")
+      }
       textareaRef.current?.focus()
-    } else {
-      const err = await res.json()
-      toast.error(err.error || "Erro ao enviar")
+    } finally {
+      setEnviando(false)
     }
   }
 
-  async function handleMediaUpload(file: File) {
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("folder", "chat")
+  async function reenviar(id: string) {
+    setReenviando(id)
+    try {
+      const res = await fetch(`/api/messages/${id}/reenviar`, { method: "POST" })
+      const dados = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(dados.error || "Não foi possível reenviar.")
+        return
+      }
+      setMensagens((m) => m.map((x) => (x.id === id ? { ...x, ...dados } : x)))
+      if (dados.externalStatus === "failed") {
+        toast.error(dados.metadata?.erroDeEnvio || "O canal recusou de novo.")
+      } else {
+        toast.success("Mensagem entregue.")
+      }
+    } finally {
+      setReenviando(null)
+    }
+  }
 
-    const uploadRes = await fetch("/api/media/upload", {
-      method: "POST",
-      body: formData,
+  // ----------------------------------------------------- transferir/resolver
+
+  async function atualizarConversa(corpo: Record<string, unknown>, ok: string) {
+    const res = await fetch(`/api/conversations/${conversationId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
     })
+    const dados = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      toast.error(dados.error || "Não foi possível atualizar a conversa.")
+      return false
+    }
+    toast.success(ok)
+    onConversaAtualizada?.()
+    return true
+  }
 
-    if (!uploadRes.ok) {
-      toast.error("Erro ao fazer upload")
+  // ------------------------------------------------------------------ midia
+
+  async function enviarMidia(arquivo: File) {
+    const form = new FormData()
+    form.append("file", arquivo)
+    form.append("folder", "chat")
+
+    const upload = await fetch("/api/media/upload", { method: "POST", body: form })
+    if (!upload.ok) {
+      const erro = await upload.json().catch(() => ({}))
+      toast.error(erro.error || "Erro ao enviar o arquivo.")
       return
     }
+    const arquivoSalvo = await upload.json()
 
-    const mediaFile = await uploadRes.json()
+    const res = await fetch("/api/media/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId, mediaFileIds: [arquivoSalvo.id] }),
+    })
+    if (!res.ok) toast.error("Arquivo salvo, mas o canal recusou a mensagem.")
+    await carregar()
+    requestAnimationFrame(irParaOFim)
+  }
 
+  async function enviarDaGaleria(ids: string[], legenda?: string) {
     await fetch("/api/media/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        conversationId,
-        mediaFileIds: [mediaFile.id],
-      }),
+      body: JSON.stringify({ conversationId, mediaFileIds: ids, caption: legenda }),
     })
-
-    loadMessages()
+    await carregar()
+    requestAnimationFrame(irParaOFim)
   }
 
-  async function handleGallerySend(mediaFileIds: string[], caption?: string) {
-    await fetch("/api/media/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        conversationId,
-        mediaFileIds,
-        caption,
-      }),
-    })
-    loadMessages()
-  }
+  // ---------------------------------------------------------------- atalhos
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  // O menu abre quando a linha inteira e um atalho sendo digitado. Nao abre no
+  // meio de uma frase que por acaso tenha barra ("parcelo em 10/12").
+  const atalhoDigitado = /^\/(\S*)$/.exec(texto)
+  const menuAberto = atalhoDigitado !== null
+
+  function aoTeclar(e: React.KeyboardEvent) {
+    // Com o menu aberto o Enter escolhe o atalho: o MenuAtalhos trata em
+    // captura e chama preventDefault, entao aqui so saimos.
+    if (menuAberto) return
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      void enviar()
     }
   }
+
+  // Separadores de dia calculados uma vez por lista, nao por bolha.
+  const comDias = useMemo(() => {
+    let ultimoDia = ""
+    return mensagens.map((m) => {
+      const dia = rotuloDoDia(m.createdAt)
+      const novo = dia !== ultimoDia
+      ultimoDia = dia
+      return { msg: m, dia: novo ? dia : null }
+    })
+  }, [mensagens])
 
   return (
     <div className="flex h-full flex-col bg-white">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-200/60 px-5 py-3">
-        <div className="flex items-center gap-2.5">
-          <span className="font-semibold text-neutral-900 tracking-tight">{contactName}</span>
-          <ChannelBadge channel={channel} />
-        </div>
-        <div className="flex gap-1.5">
-          <Button variant="outline" size="sm" className="text-xs h-7 rounded-lg border-neutral-200/60 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50">
-            Transferir
-          </Button>
-          <Button variant="outline" size="sm" className="text-xs h-7 rounded-lg border-neutral-200/60 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50">
-            Resolver
-          </Button>
-        </div>
-      </div>
+      <CabecalhoConversa
+        contactName={contactName}
+        channel={channel}
+        onTransferir={async (destino, nome) => {
+          await atualizarConversa(
+            { assignedTo: destino },
+            `Conversa transferida para ${nome}.`
+          )
+        }}
+        onResolver={async () => {
+          await atualizarConversa({ status: "resolved" }, "Conversa resolvida.")
+        }}
+      />
 
-      {/* Messages */}
-      <ScrollArea className="flex-1 p-4 bg-[#fafaf8]" ref={scrollRef}>
+      <ScrollArea className="flex-1 bg-[#fafaf8] p-4" viewportRef={viewportRef}>
+        {temMais && (
+          <div className="mb-3 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-lg text-xs"
+              onClick={carregarAnteriores}
+              disabled={carregandoAnteriores}
+            >
+              <ChevronUp className="mr-1 h-3 w-3" />
+              {carregandoAnteriores ? "Carregando..." : "Mensagens anteriores"}
+            </Button>
+          </div>
+        )}
+
         <div className="space-y-3">
-          {messages.map((msg) => {
-            const isAgent = msg.senderType === "agent" || msg.senderType === "bot"
-            const isNote = msg.isInternalNote
-
-            return (
-              <div
-                key={msg.id}
-                className={cn(
-                  "flex",
-                  isAgent ? "justify-end" : "justify-start"
-                )}
-              >
-                <div
-                  className={cn(
-                    "max-w-[70%] rounded-2xl px-3.5 py-2.5 shadow-sm",
-                    isNote
-                      ? "bg-amber-50/80 border border-amber-200/60"
-                      : isAgent
-                        ? "bg-neutral-900 text-white"
-                        : "bg-white border border-neutral-200/60"
-                  )}
-                >
-                  {/* Note indicator */}
-                  {isNote && (
-                    <div className="flex items-center gap-1 text-xs text-amber-700 mb-1">
-                      <StickyNote className="h-3 w-3" />
-                      <span className="font-medium">Nota interna</span>
-                    </div>
-                  )}
-
-                  {/* Agent name */}
-                  {isAgent && msg.sender && !isNote && (
-                    <p className="text-[10px] text-white/60 mb-0.5">
-                      {msg.sender.name}
-                    </p>
-                  )}
-
-                  {/* Media */}
-                  {msg.media.length > 0 && msg.media.map((m) => (
-                    <div key={m.id} className="mb-1">
-                      <MediaPreview
-                        url={m.mediaFile?.fileUrl || m.externalUrl || ""}
-                        thumbnailUrl={m.mediaFile?.thumbnailUrl}
-                        fileType={m.fileType || "document"}
-                        mimeType={m.mimeType}
-                        caption={m.caption}
-                        originalName={m.mediaFile?.originalName}
-                        transcription={m.transcription}
-                        transcriptionStatus={m.transcriptionStatus}
-                        duration={m.mediaFile?.duration}
-                      />
-                    </div>
-                  ))}
-
-                  {/* Text content */}
-                  {msg.content && (
-                    <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                      {msg.content}
-                    </p>
-                  )}
-
-                  {/* Time + status */}
-                  <div className={cn(
-                    "flex items-center gap-1 mt-1",
-                    isAgent && !isNote ? "justify-end" : "justify-start"
-                  )}>
-                    <span className={cn(
-                      "text-[11px]",
-                      isNote
-                        ? "text-amber-500"
-                        : isAgent
-                          ? "text-white/40"
-                          : "text-neutral-400"
-                    )}>
-                      {formatDistanceToNow(new Date(msg.createdAt), {
-                        addSuffix: true,
-                        locale: ptBR,
-                      })}
-                    </span>
-                    {isAgent && <StatusIcon status={msg.externalStatus} />}
-                  </div>
+          {comDias.map(({ msg, dia }) => (
+            <div key={msg.id} className="space-y-3">
+              {dia && (
+                <div className="flex justify-center">
+                  <span className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-medium text-neutral-500 shadow-sm">
+                    {dia}
+                  </span>
                 </div>
-              </div>
-            )
-          })}
+              )}
+              <BolhaMensagem
+                msg={msg}
+                onReenviar={reenviar}
+                reenviando={reenviando === msg.id}
+              />
+            </div>
+          ))}
         </div>
       </ScrollArea>
 
@@ -305,67 +411,85 @@ export function ChatWindow({
 
         <AiSuggestion
           conversationId={conversationId}
-          onSend={(text) => { setInput(text); handleSend() }}
+          onSend={(t) => { setTexto(t); enviar() }}
         />
       */}
 
-      {/* Media Bar */}
       <MediaBar
-        onImageSelect={handleMediaUpload}
-        onVideoSelect={handleMediaUpload}
-        onFileSelect={handleMediaUpload}
-        onGalleryOpen={() => setGalleryOpen(true)}
+        onImageSelect={enviarMidia}
+        onVideoSelect={enviarMidia}
+        onFileSelect={enviarMidia}
+        onGalleryOpen={() => setGaleriaAberta(true)}
         onProductSelect={() => toast.info("Seletor de produto (Fase 6)")}
         onQuickReply={() => {
-          setInput("/")
+          setTexto("/")
           textareaRef.current?.focus()
         }}
       />
 
-      {/* Input */}
-      <div className="border-t border-neutral-200/60 p-3 bg-white">
+      <div className="relative border-t border-neutral-200/60 bg-white p-3">
+        <MenuAtalhos
+          termo={atalhoDigitado?.[1] ?? ""}
+          aberto={menuAberto}
+          onEscolher={(conteudo) => {
+            setTexto(conteudo)
+            textareaRef.current?.focus()
+          }}
+          onFechar={() => setTexto("")}
+        />
+
         <div className="flex gap-2">
           <Textarea
             ref={textareaRef}
-            placeholder="Digite sua mensagem... (/ para atalho)"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
+            placeholder="Digite sua mensagem... (/ abre as respostas rápidas)"
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            onKeyDown={aoTeclar}
             rows={1}
-            className="min-h-[44px] max-h-[120px] resize-none text-sm rounded-xl border-neutral-200/60 bg-[#fafaf8] focus:border-neutral-400 focus:ring-neutral-400/20 placeholder:text-neutral-400"
+            className="max-h-[120px] min-h-[44px] resize-none rounded-xl border-neutral-200/60 bg-[#fafaf8] text-sm placeholder:text-neutral-400 focus:border-neutral-400 focus:ring-neutral-400/20"
           />
           <div className="flex flex-col gap-1">
             <Button
               size="icon"
-              className="h-9 w-9 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white"
-              onClick={() => handleSend(false)}
-              disabled={!input.trim() || sending}
+              className="h-9 w-9 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800"
+              onClick={() => enviar(false)}
+              disabled={!texto.trim() || enviando}
+              title="Enviar (Enter)"
             >
               <Send className="h-4 w-4" />
             </Button>
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9 rounded-xl border-neutral-200/60 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
-              onClick={() => handleSend(true)}
-              disabled={!input.trim() || sending}
-              title="Nota interna"
+              className="h-9 w-9 rounded-xl border-neutral-200/60 text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
+              onClick={() => enviar(true)}
+              disabled={!texto.trim() || enviando}
+              title="Salvar como nota interna (não vai para a cliente)"
             >
               <StickyNote className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        {input.startsWith("/") && (
-          <p className="text-[11px] text-neutral-400 mt-1.5">
-            Atalhos: /frete /medidas /troca /pix /rastreio /promo /horario
-          </p>
+
+        {!menuAberto && (
+          <button
+            type="button"
+            onClick={() => {
+              setTexto("/")
+              textareaRef.current?.focus()
+            }}
+            className="mt-1.5 flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-600"
+          >
+            <Zap className="h-3 w-3" />
+            Respostas rápidas
+          </button>
         )}
       </div>
 
       <GalleryModal
-        open={galleryOpen}
-        onOpenChange={setGalleryOpen}
-        onSend={handleGallerySend}
+        open={galeriaAberta}
+        onOpenChange={setGaleriaAberta}
+        onSend={enviarDaGaleria}
       />
     </div>
   )

@@ -40,6 +40,36 @@ function paraCaminhoReal(rota: string): string {
     .replace(/\[[^\]]+\]/g, "abc123")
 }
 
+/**
+ * Modulos compartilhados aos quais uma rota pode delegar, com a marca que
+ * denuncia a delegacao no fonte.
+ *
+ * As varreduras de envio (conta de entrada, provedor do adapter, URL assinada)
+ * precisam disto: o codigo de entrega saiu dos route handlers e virou
+ * `lib/chat/enviar.ts`, porque DUAS rotas entregam a mesma mensagem (envio e
+ * reenvio) e duplicar significava quatro lugares para divergir. O invariante e
+ * o mesmo; mudou de endereco.
+ */
+const DELEGACOES: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["entregarNoCanal", ["src", "lib", "chat", "enviar.ts"]],
+]
+
+/**
+ * Fonte efetiva de uma rota: ela mesma mais os modulos aos quais delega.
+ *
+ * Usar nas varreduras que perguntam "esta rota faz X?" quando X pode viver num
+ * helper compartilhado. Centralizar codigo deixa de quebrar um teste que
+ * deveria continuar passando — e nao fazer X continua quebrando, como deve.
+ */
+export function fonteEfetiva(...caminhoDaRota: readonly string[]): string {
+  const raiz = resolve(__dirname, "..")
+  const propria = readFileSync(resolve(raiz, ...caminhoDaRota), "utf8")
+  const extras = DELEGACOES.filter(([marca]) => propria.includes(marca)).map(
+    ([, arquivo]) => readFileSync(resolve(raiz, ...arquivo), "utf8")
+  )
+  return [propria, ...extras].join("\n")
+}
+
 export function listarRotas(): Rota[] {
   return walk(API_DIR).map((arquivo) => {
     const rota =

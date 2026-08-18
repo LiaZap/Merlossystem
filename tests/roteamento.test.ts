@@ -8,6 +8,7 @@
  * precisar de banco.
  */
 import { describe, it, expect } from "vitest"
+import { fonteEfetiva } from "./rotas"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { getAdapterDaConta } from "@/lib/channels"
@@ -80,7 +81,8 @@ describe("envio sai pela conta de entrada", () => {
     ["messages", "src/app/api/messages/route.ts"],
     ["media/send", "src/app/api/media/send/route.ts"],
   ])("%s resolve a conta da conversa antes de enviar", (_nome, caminho) => {
-    const src = ler(caminho)
+    // Fonte efetiva: a rota mais o modulo de entrega ao qual ela delega.
+    const src = fonteEfetiva(...caminho.split("/"))
     expect(src).toContain("contaDaConversa")
     expect(src).toContain("getAdapterDaConta")
     // O adapter global nao pode mais ser usado direto no envio.

@@ -10,6 +10,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
+import { fonteEfetiva } from "./rotas"
 import sharp from "sharp"
 import { montarChave } from "@/lib/media/armazenamento"
 import { urlInterna, urlInternaThumb, getFileTypeFromMime } from "@/lib/media/upload"
@@ -73,7 +74,7 @@ describe("URL assinada e o caminho de fora", () => {
       ["src", "app", "api", "messages", "route.ts"],
       ["src", "app", "api", "media", "send", "route.ts"],
     ]) {
-      const src = ler(...arq)
+      const src = fonteEfetiva(...arq)
       expect(src, arq.join("/")).toContain("urlAssinada(")
       expect(src, arq.join("/")).not.toMatch(/adapter\.send\w+\([^)]*fileUrl/)
     }

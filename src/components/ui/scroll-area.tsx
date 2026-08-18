@@ -5,11 +5,23 @@ import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * `viewportRef` aponta para o elemento que REALMENTE rola.
+ *
+ * Existe porque um `ref` passado ao ScrollArea cai na Root, e a Root nao rola:
+ * quem tem overflow e o Viewport, aqui dentro. O chat fazia
+ * `ref.current.scrollTop = scrollHeight` na Root — atribuicao valida, sem erro
+ * no console e sem efeito nenhum. O historico nao descia para a mensagem nova.
+ * Quem precisa controlar a rolagem usa esta prop, nao `ref`.
+ */
 function ScrollArea({
   className,
   children,
+  viewportRef,
   ...props
-}: ScrollAreaPrimitive.Root.Props) {
+}: ScrollAreaPrimitive.Root.Props & {
+  viewportRef?: React.Ref<HTMLDivElement>
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -17,6 +29,7 @@ function ScrollArea({
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
+        ref={viewportRef}
         data-slot="scroll-area-viewport"
         className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
       >

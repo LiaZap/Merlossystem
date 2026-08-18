@@ -20,7 +20,13 @@ export async function GET(req: Request) {
   const search = searchParams.get("search") || ""
   const category = searchParams.get("category") || ""
 
+  // `apenasAtivas` existe para o menu de atalhos do chat: a tela de
+  // gerenciamento precisa listar as desativadas, o composer nao pode
+  // oferecer uma resposta que alguem desligou de proposito.
+  const apenasAtivas = searchParams.get("apenasAtivas") === "1"
+
   const where: Record<string, unknown> = { ...escopoDaLoja(usuario, lojaAtiva(req)) }
+  if (apenasAtivas) where.isActive = true
   if (search) {
     where.OR = [
       { title: { contains: search, mode: "insensitive" } },

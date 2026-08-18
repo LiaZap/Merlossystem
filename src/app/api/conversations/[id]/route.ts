@@ -1,7 +1,25 @@
 import { NextResponse } from "next/server"
+import { z } from "zod"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva, foraDaLoja } from "@/lib/loja"
+
+/**
+ * Os valores vem do `schema.prisma` (Conversation.status e .priority). Sem
+ * este enum o PUT aceitava qualquer string: gravar `status: "banana"` fazia a
+ * conversa desaparecer da caixa de entrada, que filtra por open|pending, sem
+ * erro nenhum e sem como achar de volta pela interface.
+ */
+const STATUS = ["open", "pending", "resolved", "archived"] as const
+const PRIORIDADE = ["low", "medium", "high", "urgent"] as const
+
+const atualizacaoSchema = z.object({
+  status: z.enum(STATUS).optional(),
+  priority: z.enum(PRIORIDADE).optional(),
+  /** id do agente, ou string vazia/null para devolver a conversa a fila. */
+  assignedTo: z.string().nullable().optional(),
+  markRead: z.boolean().optional(),
+})
 
 /**
  * Conversa individual.
@@ -49,20 +67,55 @@ export async function PUT(
 
   const alvo = await prisma.conversation.findFirst({
     where: { id, ...escopoDaLoja(usuario, lojaAtiva(req)) },
-    select: { id: true },
+    select: { id: true, storeId: true },
   })
   if (!alvo) return foraDaLoja("Conversa")
 
-  const body = await req.json()
+  const parse = atualizacaoSchema.safeParse(await req.json())
+  if (!parse.success) {
+    return NextResponse.json(
+      { error: "Dados inválidos", detalhes: parse.error.flatten().fieldErrors },
+      { status: 400 }
+    )
+  }
+  const body = parse.data
 
   const data: Record<string, unknown> = {}
   if (body.status !== undefined) data.status = body.status
-  if (body.assignedTo !== undefined) data.assignedTo = body.assignedTo || null
   if (body.priority !== undefined) data.priority = body.priority
+  if (body.markRead) data.unreadCount = 0
 
-  // Mark as read
-  if (body.markRead) {
-    data.unreadCount = 0
+  // Transferir exige checar a LOJA do destinatario, nao so que o id existe.
+  // O id vem do corpo do request: sem esta checagem dava para atribuir a
+  // conversa a um vendedor da outra loja, que ficava com o nome estampado nela
+  // sem nunca poder abri-la (o escopo o barra na leitura). A conversa entrava
+  // num limbo: atribuida a quem nao consegue atender.
+  if (body.assignedTo !== undefined) {
+    if (!body.assignedTo) {
+      data.assignedTo = null
+    } else {
+      const destinatario = await prisma.user.findFirst({
+        where: {
+          id: body.assignedTo,
+          isActive: true,
+          // storeId nulo = admin/gerente, que alcancam as duas lojas
+          // (docs/rbac.md). Vendedor e viewer tem loja obrigatoria.
+          OR: [{ storeId: alvo.storeId }, { storeId: null }],
+        },
+        select: { id: true },
+      })
+      if (!destinatario) {
+        return NextResponse.json(
+          { error: "Destinatário não atende esta loja." },
+          { status: 422 }
+        )
+      }
+      data.assignedTo = destinatario.id
+    }
+  }
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "Nada a atualizar." }, { status: 400 })
   }
 
   const conversation = await prisma.conversation.update({

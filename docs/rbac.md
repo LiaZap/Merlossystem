@@ -37,7 +37,7 @@ separado do papel e esta em `src/lib/loja.ts`.
 |------|--------|------|---------|
 | `/api/scheduled/[id]` | `DELETE` | admin, gerente, vendedor | Aqui `DELETE` e cancelamento logico (grava `status: "cancelled"`), nao exclusao — e trabalho de atendimento |
 | `/api/integracoes**` | todos | admin | Credencial de integracao e chave que movimenta dinheiro e dado de cliente. Inclui `/api/integracoes/uazapi/[id]/sessao`, que parea o WhatsApp por QR code |
-| `/api/usuarios**` | todos | admin | Criar/editar usuario e trocar papel e privilegio de admin. **A rota ainda nao existe** — a regra esta escrita antes para a rota ja nascer fechada |
+| `/api/usuarios**` | `POST` `PUT` `PATCH` `DELETE` | admin | Criar/editar usuario e trocar papel escala privilegio. **Ler segue o padrao**, pelo mesmo motivo de `/api/lojas`: o vendedor precisa da lista de colegas para transferir uma conversa, e a rota devolve so nome, papel e avatar, filtrados pela loja de quem pergunta |
 | `/api/lojas**` | `POST` `PUT` `PATCH` `DELETE` | admin | Cadastro de loja e configuracao. **Ler segue o padrao**: a propria rota escopa o que cada papel enxerga, e o vendedor precisa da leitura para a interface mostrar em qual loja ele esta |
 
 LGPD e trilha de auditoria **nao** sao configuracao: a tela mora em `/settings`,
@@ -93,7 +93,7 @@ invariantes sobre **todas** elas, nao sobre uma lista escrita a mao:
 - `viewer` nunca escreve;
 - `vendedor` nunca exclui — e a lista de excecoes tem que ser exatamente `/api/scheduled/[id]`;
 - todo `DELETE` permite `admin`;
-- as unicas leituras fechadas para `viewer` sao as de configuracao (integracoes e usuarios);
+- as unicas leituras fechadas para `viewer` sao as de configuracao (integracoes);
 - token sem `role`, com role vazia ou com role inventada (`superuser`) nao passa em nada.
 
 Afrouxar uma permissao ou criar rota permissiva nova quebra um desses testes.

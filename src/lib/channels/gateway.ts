@@ -213,6 +213,12 @@ export async function processStatusUpdate(update: StatusUpdate) {
 
 /**
  * Save an outgoing message sent by an agent.
+ *
+ * A mensagem e gravada TAMBEM quando o canal recusa o envio (`erroDeEnvio`).
+ * Antes o route handler retornava 500 antes de chegar aqui, e a mensagem nao
+ * existia em lugar nenhum: a atendente via um toast e o texto sumia da tela,
+ * sem registro do que tentou mandar e sem como reenviar. Token vencido ou
+ * janela de 24h fechada viravam trabalho perdido em silencio.
  */
 export async function saveOutgoingMessage(opts: {
   conversationId: string
@@ -224,7 +230,11 @@ export async function saveOutgoingMessage(opts: {
   externalId?: string
   mediaFileId?: string
   mediaCaption?: string
+  /** Motivo da recusa do canal. Presente => grava a mensagem como `failed`. */
+  erroDeEnvio?: string
 }) {
+  const falhou = Boolean(opts.erroDeEnvio)
+
   const message = await prisma.message.create({
     data: {
       storeId: opts.storeId,
@@ -234,7 +244,11 @@ export async function saveOutgoingMessage(opts: {
       content: opts.content || null,
       contentType: opts.contentType,
       externalId: opts.externalId || null,
-      externalStatus: opts.externalId ? "sent" : null,
+      externalStatus: falhou ? "failed" : opts.externalId ? "sent" : null,
+      // O motivo fica na mensagem para a atendente ler no tooltip da bolha
+      // vermelha ("numero nao tem WhatsApp", "janela de 24h fechada"), em vez
+      // de um "erro ao enviar" que nao diz o que fazer.
+      metadata: falhou ? { erroDeEnvio: opts.erroDeEnvio } : {},
     },
   })
 

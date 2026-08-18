@@ -12,6 +12,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
+import { fonteEfetiva } from "./rotas"
 import { getAdapter, getAdapterDaConta } from "@/lib/channels"
 import { criarUazapiAdapter, parseUazapiMessages } from "@/lib/channels/uazapi"
 import { verificarWebhookUazapi } from "@/lib/webhook-auth"
@@ -146,7 +147,7 @@ describe("adapter do uazapi", () => {
       ["src", "app", "api", "messages", "route.ts"],
       ["src", "app", "api", "media", "send", "route.ts"],
     ]) {
-      expect(ler(...rota), rota.join("/")).toContain("conta?.provedor")
+      expect(fonteEfetiva(...rota), rota.join("/")).toContain("conta?.provedor")
     }
   })
 })

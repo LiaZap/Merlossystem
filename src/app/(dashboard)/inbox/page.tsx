@@ -22,9 +22,18 @@ export default function InboxPage() {
 
   const selectedConv = conversations.find((c) => c.id === selectedId)
 
+  // A busca vai para o servidor com atraso. Sem isto era um request por tecla:
+  // digitar "Fernanda" disparava 8 consultas, e a resposta lenta de um prefixo
+  // antigo chegava depois e sobrescrevia o resultado do termo completo.
+  const [buscaAplicada, setBuscaAplicada] = useState("")
+  useEffect(() => {
+    const timer = setTimeout(() => setBuscaAplicada(search), 350)
+    return () => clearTimeout(timer)
+  }, [search])
+
   const loadConversations = useCallback(async () => {
     const params = new URLSearchParams()
-    if (search) params.set("search", search)
+    if (buscaAplicada) params.set("search", buscaAplicada)
     if (channelFilter !== "all") params.set("channel", channelFilter)
     if (statusFilter !== "all") params.set("status", statusFilter)
 
@@ -34,7 +43,7 @@ export default function InboxPage() {
       setConversations(data.conversations)
     }
     setIsLoading(false)
-  }, [search, channelFilter, statusFilter])
+  }, [buscaAplicada, channelFilter, statusFilter])
 
   useEffect(() => {
     loadConversations()
@@ -116,6 +125,7 @@ export default function InboxPage() {
                 conversationId={selectedConv.id}
                 contactName={selectedConv.contact.name || selectedConv.contact.phone || "Desconhecido"}
                 channel={selectedConv.channel}
+                onConversaAtualizada={loadConversations}
               />
             </div>
           </div>

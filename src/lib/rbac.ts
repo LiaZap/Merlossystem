@@ -69,11 +69,18 @@ const EXCECOES: { re: RegExp; metodos: Partial<Record<Metodo, Role[]>>; motivo: 
     motivo: "cadastro de loja e configuracao; a listagem e operacao",
   },
 
-  // === Area de USUARIO — so admin =========================================
+  // === Area de USUARIO — escrita so admin =================================
   {
+    // Mesmo criterio de `/api/lojas` acima: LER a lista de colegas e operacao,
+    // nao configuracao. O vendedor precisa dela para transferir uma conversa, e
+    // travar o GET em admin deixava o seletor de transferencia vazio justamente
+    // para quem transfere. A rota devolve o minimo — nome, papel e avatar,
+    // filtrados pela loja de quem pergunta — e nunca e-mail ou senha.
+    //
+    // Criar usuario, trocar papel e desativar continuam privilegio de admin.
     re: /^\/api\/usuarios(\/|$)/,
-    metodos: { GET: SO_ADMIN, POST: SO_ADMIN, PUT: SO_ADMIN, PATCH: SO_ADMIN, DELETE: SO_ADMIN },
-    motivo: "criar/editar usuario e trocar papel e privilegio de admin",
+    metodos: { POST: SO_ADMIN, PUT: SO_ADMIN, PATCH: SO_ADMIN, DELETE: SO_ADMIN },
+    motivo: "escrever usuario e privilegio de admin; listar colegas e operacao",
   },
 
   // LGPD e trilha de auditoria NAO sao configuracao: a tela mora em

@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
-import { getAdapterDaConta } from "@/lib/channels"
 import { saveOutgoingMessage } from "@/lib/channels/gateway"
-import { contaDaConversa, credenciaisDaConta } from "@/lib/roteamento"
-import type { ChannelType } from "@/lib/channels/types"
+import { entregarNoCanal } from "@/lib/chat/enviar"
+import type { ContentType } from "@/lib/channels/types"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
-import { urlAssinada } from "@/lib/media/armazenamento"
 import { z } from "zod"
 
 // `senderId` NAO entra aqui: quem enviou vem da sessao.
@@ -104,101 +102,33 @@ export async function POST(req: Request) {
       return NextResponse.json(message, { status: 201 })
     }
 
-    // Determine recipient ID for the channel
-    const channel = conversation.channel as ChannelType
-    const contact = conversation.contact
-    const recipientId =
-      channel === "whatsapp"
-        ? contact.whatsappId || contact.phone
-        : channel === "instagram"
-          ? contact.instagramId
-          : channel === "facebook"
-            ? contact.facebookId
-            : contact.tiktokId
+    const entrega = await entregarNoCanal({
+      conversa: conversation,
+      contentType: data.contentType as ContentType,
+      content: data.content,
+      mediaFileId: data.mediaFileId,
+      mediaCaption: data.mediaCaption,
+    })
 
-    if (!recipientId) {
-      return NextResponse.json(
-        { error: `Contato não tem ID para o canal ${channel}` },
-        { status: 400 }
-      )
-    }
-
-    // Get media URL if sending media
-    let mediaUrl: string | undefined
-    if (data.mediaFileId) {
-      // `findFirst` + loja da conversa, nao `findUnique` por id: o guard de
-      // soft delete nao alcanca `findUnique`, entao arquivo ja excluido
-      // continuaria enviavel — e o id vem do corpo, entao tambem servia para
-      // mandar midia da outra loja para a cliente.
-      const mediaFile = await prisma.mediaFile.findFirst({
-        where: { id: data.mediaFileId, storeId: conversation.storeId },
-      })
-      // URL ASSINADA, nao `fileUrl`: quem baixa a midia e a Meta/uazapi, do
-      // lado de fora, e `fileUrl` aponta para a nossa rota autenticada — eles
-      // receberiam 401 e a mensagem chegaria sem imagem. TTL curto: a URL
-      // viaja para fora do nosso perimetro (ADR 0006).
-      if (mediaFile) mediaUrl = await urlAssinada(mediaFile.fileKey)
-    }
-
-    // Send via channel adapter
-    // Responde pela MESMA conta em que a mensagem entrou: a cliente que
-    // escreveu para o SAC nao pode receber resposta pelo numero de vendas.
-    const conta = await contaDaConversa(data.conversationId)
-    const credenciais = conta ? await credenciaisDaConta(conta.id) : null
-    const adapter = getAdapterDaConta(channel, credenciais, conta?.provedor)
-    let result
-
-    switch (data.contentType) {
-      case "text":
-        result = await adapter.sendText(recipientId, data.content || "")
-        break
-      case "image":
-        result = await adapter.sendImage(
-          recipientId,
-          mediaUrl || "",
-          data.mediaCaption
-        )
-        break
-      case "video":
-        result = await adapter.sendVideo(
-          recipientId,
-          mediaUrl || "",
-          data.mediaCaption
-        )
-        break
-      case "audio":
-        result = await adapter.sendAudio(recipientId, mediaUrl || "")
-        break
-      case "document":
-        result = await adapter.sendDocument(
-          recipientId,
-          mediaUrl || "",
-          "document"
-        )
-        break
-      default:
-        result = await adapter.sendText(recipientId, data.content || "")
-    }
-
-    if (!result.success) {
-      return NextResponse.json(
-        { error: result.error || "Falha ao enviar mensagem" },
-        { status: 500 }
-      )
-    }
-
-    // Save outgoing message
+    // A mensagem e gravada NOS DOIS casos. Quando o canal recusa, ela vira uma
+    // bolha `failed` na conversa, com o motivo, e a atendente pode reenviar.
+    // Antes daqui saia um 500 antes de gravar: a tentativa nao deixava rastro
+    // nenhum e o trabalho da atendente se perdia em silencio.
     const message = await saveOutgoingMessage({
       conversationId: data.conversationId,
       storeId: conversation.storeId,
       senderId: usuario.id,
       content: data.content,
-      contentType: data.contentType as "text" | "image" | "video" | "audio" | "document",
-      externalId: result.externalId,
+      contentType: data.contentType as ContentType,
+      externalId: entrega.ok ? entrega.externalId : undefined,
       mediaFileId: data.mediaFileId,
       mediaCaption: data.mediaCaption,
+      erroDeEnvio: entrega.ok ? undefined : entrega.erro,
     })
 
+    // 201 mesmo na recusa do canal: o pedido foi processado e a mensagem
+    // existe. Quem chama distingue pelo `externalStatus` do corpo, nao pelo
+    // codigo HTTP — precisa da mensagem gravada para desenhar a bolha.
     return NextResponse.json(message, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
