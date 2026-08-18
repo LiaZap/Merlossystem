@@ -136,11 +136,34 @@ entre as duas lojas (ver [ADR 0006](adr/0006-midia-no-minio.md)).
 Depois do primeiro deploy, no terminal do container do app:
 
 ```bash
-npx prisma db push && node scripts/db-constraints.mjs
+node scripts/db-bootstrap.mjs && node scripts/db-constraints.mjs
 ```
 
-O segundo comando aplica CHECK constraints que o Prisma nao expressa. Sem ele o
-banco aceita estados que o sistema considera impossiveis.
+O primeiro cria as 26 tabelas; o segundo aplica CHECK constraints que o Prisma
+nao expressa (sem elas o banco aceita estados que o sistema considera
+impossiveis).
+
+**Nao use `npx prisma db push` aqui — o CLI nao esta na imagem, de proposito.**
+No Prisma 7 ele exige `@prisma/dev`, que puxa pglite, hono, effect e mais 14
+pacotes; o runtime sairia de 48 MB para mais de 800 MB por causa de um comando
+usado duas vezes por ano. Em vez disso, o SQL de criacao e gerado no build
+(`prisma migrate diff --from-empty`) e aplicado com `pg`, que ja vem no bundle.
+
+`db-bootstrap.mjs` **so age em banco vazio**. Se ja houver tabelas, ele avisa e
+sai sem tocar em nada — reaplicar o SQL de criacao falharia no meio e deixaria
+o schema quebrado.
+
+### Alterar o schema depois
+
+O bootstrap cria do zero; ele nao migra. Para mudancas em um banco que ja
+existe, rode de uma maquina com o repositorio, apontando para producao:
+
+```bash
+DATABASE_URL="postgres://usuario:senha@host:5432/banco" npx prisma db push
+```
+
+Isso exige que o Postgres esteja acessivel de fora — no EasyPanel, exponha a
+porta do servico de banco, e **feche depois**.
 
 **Nao rode `npm run db:seed` em producao** — ele apaga e recria dados de exemplo.
 

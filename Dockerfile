@@ -36,6 +36,15 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
+# SQL de criacao do schema, gerado AQUI, onde o CLI existe.
+#
+# `--from-empty` nao toca em banco nenhum: le so a schema. O runtime aplica
+# esse arquivo com `pg` (scripts/db-bootstrap.mjs), e assim o CLI do Prisma
+# NAO precisa ir para a imagem final — ver o comentario no estagio runner.
+RUN npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script \
+  > prisma/schema.sql \
+  && test -s prisma/schema.sql
+
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
@@ -57,39 +66,18 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# O standalone JA traz `@prisma/client`, `.prisma`, `pg` e `sharp` — verificado
-# no build, nao suposto. O que falta e o CLI do `prisma` (devDependency, nao
-# importado por codigo) e as dependencias dele.
+# O CLI do Prisma NAO vai para a imagem, e isso e decisao, nao esquecimento.
 #
-# Sem o CLI, `npx prisma db push` tenta BAIXAR o pacote do registry de dentro
-# do container e morre com EACCES. Com o CLI mas sem `@prisma/engines`, morre
-# com "Cannot find module '@prisma/engines'".
+# No Prisma 7 ele arrasta uma arvore enorme: `prisma/build/index.js` exige
+# `@prisma/config`, `@prisma/dev`, `@prisma/engines` e `@prisma/studio-core` ja
+# no topo, e `@prisma/dev` sozinho puxa pglite, hono, effect e mais 14. Levar
+# tudo faria o runtime sair de 48 MB para +800 MB — 17x, por um comando usado
+# duas vezes por ano.
 #
-# Os pacotes sao listados um a um de proposito. Copiar `@prisma` inteiro
-# custaria 161 MB e traria `studio-core` (36 MB) e `query-plan-executor`, que
-# `db push` nao usa. Assim sao ~45 MB.
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/engines-version ./node_modules/@prisma/engines-version
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/fetch-engine ./node_modules/@prisma/fetch-engine
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/get-platform ./node_modules/@prisma/get-platform
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/debug ./node_modules/@prisma/debug
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/config ./node_modules/@prisma/config
-
-# Schema e scripts para rodar `prisma db push && node scripts/db-constraints.mjs`
-# apos o primeiro deploy.
+# No lugar dele: o SQL foi gerado no estagio de build, e `db-bootstrap.mjs` o
+# aplica usando `pg`, que ja vem no bundle da aplicacao.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
-
-# `prisma.config.mjs` e obrigatorio, nao conveniencia: o Prisma 7 removeu `url`
-# da schema (P1012), entao e ELE quem diz onde e o banco.
-#
-# `.mjs` e nao `.ts`: transpilar o config exigiria `typescript` na imagem.
-# E ele importa `dotenv`, que o tracing do Next nao inclui porque nenhum codigo
-# da aplicacao usa.
-COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.mjs ./prisma.config.mjs
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/dotenv ./node_modules/dotenv
 
 USER nextjs
 EXPOSE 3005
