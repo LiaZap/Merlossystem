@@ -61,7 +61,7 @@ export async function POST(req: Request) {
       if (msg.mediaId && !msg.mediaUrl) {
         try {
           const downloaded = await whatsappAdapter.downloadMedia(msg.mediaId)
-          // Convert buffer to base64 data URL for Cloudinary upload
+          // Data URL: o gateway baixa dela e guarda no MinIO (ADR 0006).
           const base64 = downloaded.buffer.toString("base64")
           msg.mediaUrl = `data:${downloaded.mimeType};base64,${base64}`
           msg.mediaMimeType = downloaded.mimeType

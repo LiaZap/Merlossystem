@@ -279,8 +279,11 @@ model MediaFile {
   id           String   @id @default(uuid())
   storeId      String   @map("store_id")
   originalName String?  @map("original_name")
+  // Chave do objeto no bucket (ADR 0006). `fileUrl` e a rota interna
+  // autenticada, nao a URL do bucket — o binario nunca e publico.
   fileKey      String   @map("file_key")
   fileUrl      String   @map("file_url")
+  thumbnailKey String?  @map("thumbnail_key")
   thumbnailUrl String?  @map("thumbnail_url")
   fileType     String   @map("file_type") // image | video | audio | document
   mimeType     String?  @map("mime_type")

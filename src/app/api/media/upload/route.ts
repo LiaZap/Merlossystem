@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
 import {
-  uploadToCloudinary,
+  subirArquivo,
   getFileTypeFromMime,
-  getCloudinaryResourceType,
+  urlInterna,
+  urlInternaThumb,
 } from "@/lib/media/upload"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { lojaAtiva, lojaParaGravar, faltaLoja } from "@/lib/loja"
 
 /**
- * POST: Upload media file to Cloudinary and save to database
+ * POST: sobe o arquivo para o MinIO e grava a linha (ADR 0006).
  * Accepts multipart/form-data with a 'file' field
  */
 export async function POST(req: Request) {
@@ -35,29 +36,33 @@ export async function POST(req: Request) {
     const buffer = Buffer.from(arrayBuffer)
     const mimeType = file.type
     const fileType = getFileTypeFromMime(mimeType)
-    const resourceType = getCloudinaryResourceType(fileType)
 
-    // Upload to Cloudinary
-    const result = await uploadToCloudinary(buffer, {
-      folder: `merlos-store/${folder}`,
-      resourceType,
-      filename: file.name,
+    const result = await subirArquivo(buffer, {
+      storeId,
+      pasta: folder,
+      nomeOriginal: file.name,
+      mimeType,
     })
 
-    // Save to database
+    // O id sai daqui, e nao do banco, porque `fileUrl` aponta para a rota
+    // `/api/media/{id}/raw` — sem saber o id antes, seria preciso gravar e
+    // depois atualizar a mesma linha so para preencher a URL.
+    const id = crypto.randomUUID()
+
     const mediaFile = await prisma.mediaFile.create({
       data: {
+        id,
         storeId,
         originalName: file.name,
-        fileKey: result.publicId,
-        fileUrl: result.url,
-        thumbnailUrl: result.thumbnailUrl || null,
+        fileKey: result.chave,
+        fileUrl: urlInterna(id),
+        thumbnailKey: result.chaveThumb || null,
+        thumbnailUrl: result.chaveThumb ? urlInternaThumb(id) : null,
         fileType,
         mimeType,
         fileSize: result.bytes,
         width: result.width || null,
         height: result.height || null,
-        duration: result.duration ? Math.round(result.duration) : null,
         productId: productId || null,
         folder,
         tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [],

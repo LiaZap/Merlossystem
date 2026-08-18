@@ -8,8 +8,7 @@ import { escopoDaLoja, lojaAtiva, foraDaLoja, type UsuarioComLoja } from "@/lib/
  *
  * Os tres handlers resolvem o arquivo DENTRO do escopo da loja. Sem isso, um
  * vendedor do Centro com o id de um arquivo do Cerro Azul baixava a foto do
- * cliente da outra loja, remarcava a pasta/tags dela e apagava o arquivo do
- * Cloudinary — perda definitiva, porque aqui o delete e fisico.
+ * cliente da outra loja, remarcava a pasta/tags dela e apagava o arquivo.
  */
 
 /** `where` do arquivo restrito a loja que quem pediu alcanca. */
@@ -31,7 +30,7 @@ export async function GET(
   })
 
   // Arquivo de outra loja responde igual a inexistente: dizer "existe, mas nao
-  // e sua" ja confirma o arquivo e devolve a url do Cloudinary na mensagem.
+  // e sua" ja confirma que o arquivo existe.
   if (!file) {
     return NextResponse.json({ error: "Arquivo não encontrado" }, { status: 404 })
   }
@@ -94,7 +93,7 @@ export async function DELETE(
   }
 
   /**
-   * Soft delete (ADR 0005), e o binario no Cloudinary FICA.
+   * Soft delete (ADR 0005), e o objeto no MinIO FICA.
    *
    * Apagar o arquivo la e marcar a linha como excluida aqui seria um soft
    * delete mentiroso: restaurar devolveria um registro apontando para uma URL
@@ -102,7 +101,7 @@ export async function DELETE(
    * (`message_media`) ficariam com imagem quebrada no historico da conversa.
    *
    * O custo disso e armazenamento: arquivo excluido continua ocupando espaco
-   * no Cloudinary. A limpeza definitiva e trabalho de rotina separada, que le
+   * no bucket. A limpeza definitiva e trabalho de rotina separada, que le
    * `is_deleted = true` com idade suficiente — nao do clique da vendedora.
    */
   await prisma.mediaFile.update({

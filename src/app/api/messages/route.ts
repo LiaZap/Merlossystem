@@ -6,6 +6,7 @@ import { contaDaConversa, credenciaisDaConta } from "@/lib/roteamento"
 import type { ChannelType } from "@/lib/channels/types"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
+import { urlAssinada } from "@/lib/media/armazenamento"
 import { z } from "zod"
 
 // `senderId` NAO entra aqui: quem enviou vem da sessao.
@@ -132,7 +133,11 @@ export async function POST(req: Request) {
       const mediaFile = await prisma.mediaFile.findFirst({
         where: { id: data.mediaFileId, storeId: conversation.storeId },
       })
-      if (mediaFile) mediaUrl = mediaFile.fileUrl
+      // URL ASSINADA, nao `fileUrl`: quem baixa a midia e a Meta/uazapi, do
+      // lado de fora, e `fileUrl` aponta para a nossa rota autenticada — eles
+      // receberiam 401 e a mensagem chegaria sem imagem. TTL curto: a URL
+      // viaja para fora do nosso perimetro (ADR 0006).
+      if (mediaFile) mediaUrl = await urlAssinada(mediaFile.fileKey)
     }
 
     // Send via channel adapter

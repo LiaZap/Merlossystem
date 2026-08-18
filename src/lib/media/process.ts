@@ -1,5 +1,5 @@
 // Media processing utilities
-// Note: sharp is optional — Cloudinary handles most transformations
+// Limites por canal. A geracao de miniatura vive em upload.ts (sharp).
 // This file provides helper functions for media validation and metadata
 
 export const CHANNEL_LIMITS = {

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma"
 import { Prisma } from "@prisma/client"
-import { uploadFromUrl, getFileTypeFromMime } from "@/lib/media/upload"
+import { subirDeUrl, getFileTypeFromMime, urlInterna, urlInternaThumb } from "@/lib/media/upload"
 import type {
   ChannelType,
   IncomingMessage,
@@ -102,7 +102,7 @@ export async function processIncomingMessage(
     })
   }
 
-  // 3. Handle media — download and upload to Cloudinary
+  // 3. Midia: baixa do canal e guarda no MinIO (ADR 0006)
   let mediaFileId: string | undefined
   let transcriptionStatus: string | undefined
 
@@ -112,23 +112,30 @@ export async function processIncomingMessage(
         ? getFileTypeFromMime(msg.mediaMimeType)
         : (msg.contentType as "image" | "video" | "audio" | "document")
 
-      const uploaded = await uploadFromUrl(msg.mediaUrl, {
-        folder: `merlos-store/${msg.channel}`,
+      const uploaded = await subirDeUrl(msg.mediaUrl, {
+        storeId,
+        pasta: msg.channel,
+        mimeType: msg.mediaMimeType,
       })
+
+      // Id gerado aqui: `fileUrl` aponta para a rota autenticada
+      // `/api/media/{id}/raw`, que precisa do id antes da gravacao.
+      const id = crypto.randomUUID()
 
       const mediaFile = await prisma.mediaFile.create({
         data: {
+          id,
           storeId,
           originalName: null,
-          fileKey: uploaded.publicId,
-          fileUrl: uploaded.url,
-          thumbnailUrl: uploaded.thumbnailUrl || null,
+          fileKey: uploaded.chave,
+          fileUrl: urlInterna(id),
+          thumbnailKey: uploaded.chaveThumb || null,
+          thumbnailUrl: uploaded.chaveThumb ? urlInternaThumb(id) : null,
           fileType,
           mimeType: msg.mediaMimeType || null,
           fileSize: uploaded.bytes,
           width: uploaded.width || null,
           height: uploaded.height || null,
-          duration: uploaded.duration ? Math.round(uploaded.duration) : null,
           folder: "incoming",
         },
       })

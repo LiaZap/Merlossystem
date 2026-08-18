@@ -187,6 +187,20 @@ busca a pagina de produtos primeiro e pergunta o saldo daqueles ids. O que se
 mostra e `depositos[].saldoFisico` — nunca `saldoFisicoTotal`, que e a soma da
 rede inteira.
 
+### Midia
+
+| Rota | Metodo | Descricao |
+|------|--------|-----------|
+| `/api/media/[id]/raw` | GET | Serve o binario. Exige sessao **e** escopo de loja. `?thumb=1` devolve a miniatura |
+
+O bucket do MinIO e **privado** (ADR 0006): nao ha URL publica de midia.
+`media_files.file_url` guarda esta rota, nao a URL do bucket — o arquivo herda
+a mesma protecao da API, e o link de uma foto nao alcanca a outra loja.
+
+Quem baixa de FORA (a Meta e o uazapi, ao enviar midia para a cliente) nao passa
+por aqui: recebe **URL assinada com validade de 10 minutos**, gerada no momento
+do envio e nunca persistida.
+
 ### Disponibilidade para a tela de venda
 
 | Rota | Metodo | Descricao |

@@ -6,6 +6,7 @@ import { contaDaConversa, credenciaisDaConta } from "@/lib/roteamento"
 import type { ChannelType } from "@/lib/channels/types"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
+import { urlAssinada } from "@/lib/media/armazenamento"
 import { z } from "zod"
 
 // `senderId` NAO entra aqui: quem enviou vem da sessao.
@@ -77,25 +78,30 @@ export async function POST(req: Request) {
       let result
       const caption = data.caption
 
+      // URL ASSINADA, nao `fileUrl`: quem baixa a midia e a Meta/uazapi, do
+      // lado de fora. `fileUrl` aponta para a nossa rota autenticada e eles
+      // receberiam 401 — a cliente veria mensagem sem imagem (ADR 0006).
+      const url = await urlAssinada(mediaFile.fileKey)
+
       switch (mediaFile.fileType) {
         case "image":
-          result = await adapter.sendImage(recipientId, mediaFile.fileUrl, caption)
+          result = await adapter.sendImage(recipientId, url, caption)
           break
         case "video":
-          result = await adapter.sendVideo(recipientId, mediaFile.fileUrl, caption)
+          result = await adapter.sendVideo(recipientId, url, caption)
           break
         case "audio":
-          result = await adapter.sendAudio(recipientId, mediaFile.fileUrl)
+          result = await adapter.sendAudio(recipientId, url)
           break
         case "document":
           result = await adapter.sendDocument(
             recipientId,
-            mediaFile.fileUrl,
+            url,
             mediaFile.originalName || "document"
           )
           break
         default:
-          result = await adapter.sendImage(recipientId, mediaFile.fileUrl, caption)
+          result = await adapter.sendImage(recipientId, url, caption)
       }
 
       if (result.success) {
