@@ -1,0 +1,47 @@
+# Banco local identico ao de producao (regra do CLAUDE.md: nunca SQLite).
+#
+#   docker compose up -d      sobe Postgres + Redis
+#   docker compose down       para (dados ficam no volume)
+#   docker compose down -v    APAGA os dados — nao use sem backup
+#
+# Portas fora do padrao para nao colidir com os outros projetos da maquina
+# (5432 padrao, 5433 espaco-flow, 5434 orbital, 5435 bahflash, 5436 mm).
+
+services:
+  db:
+    image: postgres:16
+    container_name: merlostore_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: merlostore_dev
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+    ports:
+      - "5437:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d merlostore_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Fila FIFO (BullMQ): envio de mensagens, broadcasts, transcricao de audio.
+  redis:
+    image: redis:7-alpine
+    container_name: merlostore_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6382:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
