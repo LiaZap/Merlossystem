@@ -58,7 +58,7 @@ const toolsNav = [
 ]
 
 const settingsNav = [
-  { name: "Configurações", href: "/settings/general", icon: Settings },
+  { name: "Configurações", href: "/settings", icon: Settings },
 ]
 
 function NavSection({

@@ -1,6 +1,24 @@
 import type { Role } from "@/lib/rbac"
 
 /**
+ * `Merlos Centro` -> `merlos-centro`.
+ *
+ * Vive aqui, e nao no route handler, porque o Next proibe rota exportar
+ * qualquer coisa alem dos verbos HTTP — e porque duas rotas usam.
+ *
+ * O slug entra na URL de webhook: muda-lo obriga a reconfigurar os canais.
+ */
+export function gerarSlug(nome: string): string {
+  return nome
+    .normalize("NFD")
+    .replace(/[^a-zA-Z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .toLowerCase()
+    .slice(0, 40)
+}
+
+/**
  * Escopo de loja — o que impede o Centro de ver o Cerro Azul.
  *
  * Regra (docs/integracoes.md, decisoes 1 e 2):

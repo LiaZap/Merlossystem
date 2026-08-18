@@ -132,17 +132,31 @@ function ajudantesComEscopo(fonte: string): string[] {
   return nomes
 }
 
+/**
+ * Rotas em que a LOJA e o recurso, nao o contexto.
+ *
+ * `/api/lojas/[id]` administra a propria loja: o `DELETE` conta usuarios e
+ * pedidos por `storeId: id`, onde o id vem da URL. Isso E escopo — so nao
+ * passa pelo ajudante, porque nao ha "loja do usuario" a resolver: a rota e
+ * so de admin e opera sobre qualquer loja por definicao.
+ *
+ * A lista e curta e explicita de proposito. Uma excecao que se ve no diff e
+ * melhor do que uma regra afrouxada em silencio.
+ */
+const LOJA_E_O_RECURSO = [/^\/api\/lojas(\/|$)/]
+
 describe("rotas protegidas consultam com escopo", () => {
   /** Cada handler que toca dado de loja vira um caso de teste proprio. */
-  const casos = rotas.flatMap((r) => {
-    const ajudantes = ajudantesComEscopo(r.fonte)
-    return handlersDe(r.fonte)
-      .filter((h) => CONSULTA.test(h.corpo))
-      .map((h) => [`${h.metodo} ${r.rota}`, h.corpo, ajudantes] as const)
-  })
+  const casos = rotas
+    .filter((r) => !LOJA_E_O_RECURSO.some((re) => re.test(r.rota)))
+    .flatMap((r) => {
+      const ajudantes = ajudantesComEscopo(r.fonte)
+      return handlersDe(r.fonte)
+        .filter((h) => CONSULTA.test(h.corpo))
+        .map((h) => [`${h.metodo} ${r.rota}`, h.corpo, ajudantes] as const)
+    })
 
   it("encontra handlers que tocam dado de loja", () => {
-
     expect(casos.length).toBeGreaterThan(15)
   })
 

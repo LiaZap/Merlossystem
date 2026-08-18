@@ -16,8 +16,8 @@ const pares = rotas.flatMap((r) =>
 )
 
 describe("cobertura", () => {
-  it("as 51 rotas protegidas entram na avaliacao", () => {
-    expect(rotas.length).toBe(51)
+  it("as 53 rotas protegidas entram na avaliacao", () => {
+    expect(rotas.length).toBe(53)
     expect(pares.length).toBeGreaterThan(60)
   })
 
@@ -62,8 +62,15 @@ describe("invariantes", () => {
     }
   })
 
-  /** Area de configuracao: so admin, em qualquer metodo (decisao 7). */
-  const EH_CONFIG = (rota: string) => /^\/api\/(integracoes|usuarios)(\/|$)/.test(rota)
+  /**
+   * Area de configuracao: so admin, em qualquer metodo (decisao 7).
+   *
+   * `lojas` entra aqui porque cadastrar e desativar loja e configuracao da
+   * rede. LER a lista continua liberada — quem escopa a resposta e a rota, e o
+   * vendedor precisa dela para a interface dizer em que loja ele esta.
+   */
+  const EH_CONFIG = (rota: string) =>
+    /^\/api\/(integracoes|usuarios|lojas)(\/|$)/.test(rota)
 
   it("gerente exclui como admin em tudo que nao e configuracao", () => {
     const negados = pares
@@ -84,6 +91,7 @@ describe("invariantes", () => {
       "/api/integracoes/[id]",
       "/api/integracoes/bling/autorizar",
       "/api/integracoes/bling/catalogo",
+      "/api/integracoes/bling/depositos",
       "/api/integracoes/tiktok/autorizar",
       "/api/integracoes/uazapi/[id]/sessao",
     ])

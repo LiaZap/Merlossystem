@@ -187,6 +187,28 @@ busca a pagina de produtos primeiro e pergunta o saldo daqueles ids. O que se
 mostra e `depositos[].saldoFisico` — nunca `saldoFisicoTotal`, que e a soma da
 rede inteira.
 
+### Lojas
+
+| Rota | Metodo | Descricao |
+|------|--------|-----------|
+| `/api/lojas` | GET | Lojas que o usuario alcanca. Gestao recebe todas (alimenta o seletor); vendedor recebe so a dele |
+| `/api/lojas` | POST | Cadastra loja. O `slug` sai do nome quando nao vem |
+| `/api/lojas/[id]` | PUT | Renomeia, troca o `slug` e define o `blingDepositoId` |
+| `/api/lojas/[id]` | DELETE | Desativa (soft delete). Recusa com `409` se ainda houver usuario ativo ou pedido na loja |
+| `/api/integracoes/bling/depositos` | GET | Depositos do Bling, para a tela escolher em vez de pedir id digitado |
+
+**Escrever e configuracao: so admin.** Ler segue o padrao, porque o vendedor
+precisa da lista para a interface dizer em que loja ele esta (decisao 7).
+
+O `slug` entra na URL de webhook — trocar obriga a reconfigurar os canais. Ele e
+unico: duas lojas com o mesmo valor fariam a mensagem cair na loja errada, e a
+rota responde `409` nesse caso.
+
+O `blingDepositoId` e o de-para com a conta unica do Bling (decisao 6). Sem ele,
+`/api/products/disponibilidade` responde sem estoque ao vivo e o catalogo do
+Bling responde `409` — de proposito, porque saldo do deposito errado e pior do
+que saldo nenhum. Ate esta tela existir, so dava para preencher por SQL.
+
 ### Midia
 
 | Rota | Metodo | Descricao |
