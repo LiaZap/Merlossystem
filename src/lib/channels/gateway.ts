@@ -37,6 +37,21 @@ export async function processIncomingMessage(
   const storeId = conta.storeId
   const idField = CHANNEL_ID_FIELD[msg.channel]
 
+  // Reentrega do mesmo evento: sai antes de fazer qualquer coisa.
+  //
+  // Meta e uazapi REENTREGAM o webhook quando nao recebem 200 no prazo — um
+  // pico de latencia nosso ja basta. Sem esta saida, a mesma mensagem virava
+  // duas bolhas na conversa e o `unreadCount` subia duas vezes, sem erro
+  // nenhum no log. Sair aqui tambem evita baixar a midia de novo, que e a
+  // parte cara do processamento.
+  if (msg.externalId) {
+    const jaProcessada = await prisma.message.findFirst({
+      where: { storeId, externalId: msg.externalId },
+      select: { id: true },
+    })
+    if (jaProcessada) return null
+  }
+
   // 1. Find or create contact — SEMPRE dentro da loja.
   let contact = await prisma.contact.findFirst({
     where: { storeId, [idField]: msg.senderId },
@@ -152,19 +167,30 @@ export async function processIncomingMessage(
   }
 
   // 4. Save message
-  const message = await prisma.message.create({
-    data: {
-      storeId,
-      conversationId: conversation.id,
-      senderType: "customer",
-      content: msg.text || null,
-      contentType: msg.contentType,
-      externalId: msg.externalId,
-      replyToId: null,
-      metadata: (msg.metadata || {}) as Prisma.InputJsonValue,
-      createdAt: msg.timestamp,
-    },
-  })
+  //
+  // A checagem la em cima resolve o caso comum (reentrega minutos depois). Este
+  // catch cobre o outro: duas entregas do MESMO evento chegando ao mesmo tempo,
+  // em que as duas passam pela checagem antes de qualquer uma gravar. Quem
+  // perde a corrida bate no indice unico `messages_store_external_id` e sai.
+  let message
+  try {
+    message = await prisma.message.create({
+      data: {
+        storeId,
+        conversationId: conversation.id,
+        senderType: "customer",
+        content: msg.text || null,
+        contentType: msg.contentType,
+        externalId: msg.externalId,
+        replyToId: null,
+        metadata: (msg.metadata || {}) as Prisma.InputJsonValue,
+        createdAt: msg.timestamp,
+      },
+    })
+  } catch (e) {
+    if ((e as { code?: string })?.code === "P2002") return null
+    throw e
+  }
 
   // 5. Create message_media if we have media
   if (mediaFileId || msg.mediaUrl) {

@@ -271,6 +271,10 @@ model Message {
   store        Store          @relation(fields: [storeId], references: [id])
 
   @@index([storeId])
+  /// Idempotencia de webhook: o mesmo evento entregue duas vezes nao vira duas
+  /// bolhas. Parcial (so external_id nao nulo) — ver prisma/sql/constraints.sql,
+  /// que e o arquivo que realmente chega ao banco de producao.
+  @@unique([storeId, externalId], name: "messages_store_external_id")
   @@map("messages")
 }
 
@@ -842,7 +846,10 @@ model ConsentLog {
 
 model ActivityLog {
   id         String   @id @default(uuid())
-  storeId    String   @map("store_id")
+  /// Nulo em acao de REDE, que nao pertence a loja nenhuma: cadastrar um
+  /// admin (que alcanca as duas lojas), conectar o Bling. Sem isto, as acoes
+  /// mais sensiveis do sistema eram justamente as que nao cabiam na trilha.
+  storeId    String?  @map("store_id")
   userId     String?  @map("user_id")
   action     String
   // message_sent | deal_moved | contact_updated | order_created
@@ -854,8 +861,8 @@ model ActivityLog {
   ipAddress  String?  @map("ip_address")
   createdAt  DateTime @default(now()) @map("created_at")
 
-  user  User? @relation("LogUser", fields: [userId], references: [id])
-  store Store @relation(fields: [storeId], references: [id])
+  user  User?  @relation("LogUser", fields: [userId], references: [id])
+  store Store? @relation(fields: [storeId], references: [id])
 
   @@index([storeId])
   @@map("activity_logs")

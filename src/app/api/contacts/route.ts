@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva, lojaParaGravar, faltaLoja } from "@/lib/loja"
 import { z } from "zod"
+import { limiteDaPagina, paginaAtual } from "@/lib/paginacao"
 
 const contactSchema = z.object({
   name: z.string().min(1).optional().nullable(),
@@ -26,8 +27,8 @@ export async function GET(req: Request) {
   const search = searchParams.get("search") || ""
   const tag = searchParams.get("tag") || ""
   const preferredSize = searchParams.get("preferredSize") || ""
-  const page = parseInt(searchParams.get("page") || "1")
-  const limit = parseInt(searchParams.get("limit") || "20")
+  const page = paginaAtual(searchParams.get("page"))
+  const limit = limiteDaPagina(searchParams.get("limit"), 20)
 
   // Carteira isolada por loja: vendedor so ve a dele; gestao ve as duas.
   const where: Record<string, unknown> = { ...escopoDaLoja(usuario, lojaAtiva(req)) }

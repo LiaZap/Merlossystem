@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { registrar, diferenca } from "@/lib/auditoria"
 import { hash } from "bcryptjs"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
@@ -37,7 +38,7 @@ export async function PUT(
 
   const alvo = await prisma.user.findUnique({
     where: { id },
-    select: { id: true, role: true, storeId: true, isActive: true },
+    select: { id: true, name: true, role: true, storeId: true, isActive: true },
   })
   if (!alvo) {
     return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 })
@@ -105,6 +106,25 @@ export async function PUT(
     select: CAMPOS_DE_GESTAO,
   })
 
+  await registrar({
+    storeId: atualizado.storeId,
+    userId: usuario.id,
+    acao: dados.isActive === true && !alvo.isActive ? "usuario_reativado" : "usuario_alterado",
+    entidade: "usuario",
+    entidadeId: id,
+    // O que MUDOU, nao o estado inteiro: a trilha precisa dizer "trocou o
+    // papel de vendedor para gerente", nao repetir o cadastro a cada edicao.
+    detalhes: {
+      alteracoes: diferenca(
+        { name: alvo.name, role: alvo.role, storeId: alvo.storeId, isActive: alvo.isActive },
+        { name: dados.name, role: dados.role, storeId: dados.storeId, isActive: dados.isActive }
+      ),
+      // A senha nova nunca entra; so o fato de ter sido trocada.
+      senhaTrocada: Boolean(dados.password),
+    },
+    req,
+  })
+
   return NextResponse.json(atualizado)
 }
 
@@ -162,6 +182,16 @@ export async function DELETE(
     where: { id },
     data: { isActive: false },
     select: CAMPOS_DE_GESTAO,
+  })
+
+  await registrar({
+    storeId: desativado.storeId,
+    userId: usuario.id,
+    acao: "usuario_desativado",
+    entidade: "usuario",
+    entidadeId: id,
+    detalhes: { nome: desativado.name, papel: desativado.role },
+    req,
   })
 
   return NextResponse.json(desativado)

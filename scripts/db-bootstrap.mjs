@@ -13,12 +13,27 @@
  * Uso, no terminal do container, apos o primeiro deploy:
  *   node scripts/db-bootstrap.mjs
  *
- * E IDEMPOTENTE no sentido que importa: se o banco ja tem tabelas, nao faz
+ * E IDEMPOTENTE no sentido que importa: se o banco ja tem tabelas, nao recria
  * nada e avisa. Nunca derruba dado.
  *
- * LIMITE, e e importante saber: isto cria o schema do ZERO. Para ALTERAR um
- * banco que ja existe, rode `npx prisma db push` de uma maquina com o
- * repositorio, apontando DATABASE_URL para producao — o CLI nao mora aqui.
+ * DUAS ETAPAS, e a segunda roda SEMPRE:
+ *   1. schema.sql       — so em banco vazio (criacao das tabelas);
+ *   2. sql/constraints.sql — em toda execucao.
+ *
+ * A etapa 2 foi acrescentada em 18/08/2026 porque faltava: o script aplicava
+ * apenas o schema, e as constraints que o Prisma nao sabe declarar
+ * (`users_loja_por_papel`, indices de idempotencia) NUNCA chegavam ao banco de
+ * producao — elas so eram aplicadas por `npm run db:push`, que exige o CLI e o
+ * repositorio, e portanto nunca rodou contra o deploy. O banco publicado
+ * ficava sem as regras que o codigo assume existirem.
+ *
+ * Por isso `constraints.sql` e escrito para ser reaplicavel (DROP IF EXISTS +
+ * ADD, CREATE INDEX IF NOT EXISTS): rodar a cada start e o canal por onde uma
+ * constraint nova alcanca um banco que ja existe.
+ *
+ * LIMITE que continua valendo: isto NAO altera tabela existente (coluna nova,
+ * tipo trocado). Para isso, `npx prisma db push` de uma maquina com o
+ * repositorio, apontando DATABASE_URL para producao.
  */
 import { readFileSync, existsSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -30,6 +45,35 @@ const pg = require("pg")
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..")
 const caminhoSql = join(raiz, "prisma", "schema.sql")
+
+const caminhoConstraints = join(raiz, "prisma", "sql", "constraints.sql")
+
+/**
+ * Aplica as regras que o Prisma nao declara. Roda em TODA execucao.
+ *
+ * Fora da transacao do schema de proposito: se uma constraint nova falhar
+ * porque o banco tem dado que a viola (ex.: mensagem duplicada de antes do
+ * indice), o schema ja criado nao pode ser desfeito junto. O erro e reportado
+ * e o container sobe — a aplicacao funciona sem a regra, e o operador ve o
+ * aviso no log em vez de um container que nao inicia.
+ */
+async function aplicarConstraints(cliente) {
+  if (!existsSync(caminhoConstraints)) {
+    console.warn(`Sem ${caminhoConstraints} — nenhuma constraint aplicada.`)
+    return
+  }
+  const sql = readFileSync(caminhoConstraints, "utf8").replace(/^﻿/, "")
+  try {
+    await cliente.query(sql)
+    console.log("Constraints aplicadas.")
+  } catch (e) {
+    console.error(
+      "AVISO: falha ao aplicar as constraints — o banco pode ter dado que as viola.\n" +
+        `Motivo: ${e.message}\n` +
+        "A aplicacao sobe assim mesmo. Resolva o dado e rode de novo."
+    )
+  }
+}
 
 async function main() {
   const url = process.env.DATABASE_URL
@@ -59,28 +103,29 @@ async function main() {
     )
     if (rows[0].n > 0) {
       console.log(
-        `O banco ja tem ${rows[0].n} tabela(s) — nada a fazer.\n` +
-          "Para ALTERAR o schema, rode `npx prisma db push` de uma maquina com o\n" +
-          "repositorio, com DATABASE_URL apontando para este banco."
+        `O banco ja tem ${rows[0].n} tabela(s) — schema preservado.\n` +
+          "Para ALTERAR tabela (coluna nova, tipo trocado), rode `npx prisma db push`\n" +
+          "de uma maquina com o repositorio, com DATABASE_URL apontando para este banco."
       )
-      return
+    } else {
+      // `replace(/^﻿/, "")`: um BOM no inicio faz o Postgres responder
+      // `syntax error at or near ""`, sem dizer o que e. Gerar o arquivo no
+      // Windows (PowerShell `Out-File`) produz exatamente isso.
+      const sql = readFileSync(caminhoSql, "utf8").replace(/^﻿/, "")
+      // Tudo ou nada: schema pela metade e pior do que schema nenhum, porque o
+      // guard acima passaria a achar que o banco esta pronto.
+      await cliente.query("BEGIN")
+      await cliente.query(sql)
+      await cliente.query("COMMIT")
+
+      const { rows: criadas } = await cliente.query(
+        `select count(*)::int as n from information_schema.tables
+         where table_schema = 'public' and table_type = 'BASE TABLE'`
+      )
+      console.log(`Schema criado: ${criadas[0].n} tabelas.`)
     }
 
-    // `replace(/^﻿/, "")`: um BOM no inicio faz o Postgres responder
-    // `syntax error at or near ""`, sem dizer o que e. Gerar o arquivo no
-    // Windows (PowerShell `Out-File`) produz exatamente isso.
-    const sql = readFileSync(caminhoSql, "utf8").replace(/^﻿/, "")
-    // Tudo ou nada: schema pela metade e pior do que schema nenhum, porque o
-    // guard acima passaria a achar que o banco esta pronto.
-    await cliente.query("BEGIN")
-    await cliente.query(sql)
-    await cliente.query("COMMIT")
-
-    const { rows: criadas } = await cliente.query(
-      `select count(*)::int as n from information_schema.tables
-       where table_schema = 'public' and table_type = 'BASE TABLE'`
-    )
-    console.log(`Schema criado: ${criadas[0].n} tabelas.`)
+    await aplicarConstraints(cliente)
   } catch (e) {
     await cliente.query("ROLLBACK").catch(() => {})
     throw e

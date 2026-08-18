@@ -5,6 +5,7 @@ import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva, foraDaLoja } from "@/lib/loja"
 import { proximoNumero } from "@/lib/pedidos/numero"
 import { z } from "zod"
+import { limiteDaPagina, paginaAtual } from "@/lib/paginacao"
 
 const orderItemSchema = z.object({
   productId: z.string(),
@@ -41,8 +42,8 @@ export async function GET(req: Request) {
   const status = searchParams.get("status") || ""
   const contactId = searchParams.get("contactId") || ""
   const search = searchParams.get("search") || ""
-  const page = parseInt(searchParams.get("page") || "1")
-  const limit = parseInt(searchParams.get("limit") || "20")
+  const page = paginaAtual(searchParams.get("page"))
+  const limit = limiteDaPagina(searchParams.get("limit"), 20)
 
   const where: Record<string, unknown> = { ...escopoDaLoja(usuario, lojaAtiva(req)) }
   if (status && status !== "all") where.status = status

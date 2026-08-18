@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva, lojaParaGravar, faltaLoja } from "@/lib/loja"
 import { z } from "zod"
+import { limiteDaPagina, paginaAtual } from "@/lib/paginacao"
 
 const productSchema = z.object({
   name: z.string().min(1),
@@ -30,8 +31,8 @@ export async function GET(req: Request) {
   const search = searchParams.get("search") || ""
   const category = searchParams.get("category") || ""
   const sizeType = searchParams.get("sizeType") || ""
-  const page = parseInt(searchParams.get("page") || "1")
-  const limit = parseInt(searchParams.get("limit") || "20")
+  const page = paginaAtual(searchParams.get("page"))
+  const limit = limiteDaPagina(searchParams.get("limit"), 20)
 
   const where: Record<string, unknown> = { ...escopoDaLoja(usuario, lojaAtiva(req)) }
 

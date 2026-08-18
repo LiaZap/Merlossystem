@@ -238,3 +238,36 @@ Honestidade sobre o estado, para nao virar surpresa:
 - **Paginas nao tem RBAC**: qualquer usuario logado abre `/settings`. A API esta
   travada, mas o menu mostra o que ele nao consegue usar.
 - **`stores.bling_deposito_id` sem tela** (ver passo 6.3).
+
+## Constraints e regras do banco
+
+`node scripts/db-bootstrap.mjs` faz duas coisas, e a segunda roda **sempre**:
+
+1. `prisma/schema.sql` — cria as tabelas, apenas em banco vazio;
+2. `prisma/sql/constraints.sql` — em toda execucao.
+
+Ate 18/08/2026 o script aplicava so a etapa 1, e as regras que o Prisma nao
+declara (`users_loja_por_papel`, o indice de idempotencia de mensagem) nunca
+chegavam ao banco publicado — elas so eram aplicadas por `npm run db:push`, que
+exige o CLI e o repositorio, e portanto nunca rodou contra o deploy.
+
+Por isso `constraints.sql` e escrito para ser reaplicavel (`DROP ... IF EXISTS`
++ `ADD`, `CREATE INDEX IF NOT EXISTS`, `DROP NOT NULL`): rodar a cada start e o
+canal por onde uma regra nova alcanca um banco que ja existe.
+
+### O que ele NAO faz
+
+Nao altera tabela existente — coluna nova, tipo trocado. Para isso:
+
+```bash
+npx prisma db push
+```
+
+de uma maquina com o repositorio, com `DATABASE_URL` apontando para producao.
+
+### Se as constraints falharem
+
+O container **sobe assim mesmo** e o log mostra `AVISO: falha ao aplicar as
+constraints`. E proposital: banco com dado que viola uma regra nova nao pode
+virar container que nao inicia — o operador precisa entrar para arrumar o dado.
+Depois de corrigir, rode `node scripts/db-bootstrap.mjs` de novo.

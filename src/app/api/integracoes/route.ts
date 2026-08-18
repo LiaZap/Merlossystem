@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { registrar } from "@/lib/auditoria"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva, lojaParaGravar, faltaLoja } from "@/lib/loja"
@@ -93,6 +94,23 @@ export async function POST(req: Request) {
         modifiedBy: usuario.id,
       },
       include: { store: { select: { id: true, nome: true } } },
+    })
+
+    // Conectar credencial e a acao mais sensivel do sistema: e a chave que
+    // movimenta dinheiro e fala com a cliente. O log guarda QUAL conta, nunca
+    // o segredo — `registrar` filtra, e aqui nem chega a receber.
+    await registrar({
+      storeId: criada.storeId,
+      userId: usuario.id,
+      acao: "integracao_conectada",
+      entidade: "integracao",
+      entidadeId: criada.id,
+      detalhes: {
+        provedor: criada.provedor,
+        rotulo: criada.rotulo,
+        referenciaExterna: criada.referenciaExterna,
+      },
+      req,
     })
 
     return NextResponse.json(paraApi(criada), { status: 201 })

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { registrar } from "@/lib/auditoria"
 import { z } from "zod"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
@@ -126,6 +127,23 @@ export async function PUT(
       agent: { select: { id: true, name: true, avatarUrl: true } },
     },
   })
+
+  // Resolver e transferir mudam de quem e a responsabilidade pelo
+  // atendimento. Sem registro, "quem fechou essa conversa?" nao tem resposta.
+  if (body.status === "resolved" || body.assignedTo !== undefined) {
+    await registrar({
+      storeId: alvo.storeId,
+      userId: usuario.id,
+      acao: body.status === "resolved" ? "conversa_resolvida" : "conversa_transferida",
+      entidade: "conversa",
+      entidadeId: id,
+      detalhes: {
+        ...(body.status ? { status: body.status } : {}),
+        ...(body.assignedTo !== undefined ? { atribuidaA: data.assignedTo } : {}),
+      },
+      req,
+    })
+  }
 
   return NextResponse.json(conversation)
 }

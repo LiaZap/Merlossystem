@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
+import { limiteDaPagina, paginaAtual } from "@/lib/paginacao"
 
 /**
  * GET: List media files with filters
@@ -17,8 +18,8 @@ export async function GET(req: Request) {
   const tag = searchParams.get("tag") || ""
   const productId = searchParams.get("productId") || ""
   const search = searchParams.get("search") || ""
-  const page = parseInt(searchParams.get("page") || "1")
-  const limit = parseInt(searchParams.get("limit") || "30")
+  const page = paginaAtual(searchParams.get("page"))
+  const limit = limiteDaPagina(searchParams.get("limit"), 30)
 
   const where: Record<string, unknown> = { ...escopoDaLoja(usuario, lojaAtiva(req)) }
 

@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Store, Plug, Users, Timer, ShieldCheck } from "lucide-react"
+import { usuarioDaSessao } from "@/lib/sessao"
 
 /**
  * Indice das configuracoes.
@@ -7,9 +8,11 @@ import { Store, Plug, Users, Timer, ShieldCheck } from "lucide-react"
  * Existe porque `/settings` respondia 404: so havia as subpaginas, e o link da
  * barra lateral levava a lugar nenhum.
  *
- * Server Component: e so navegacao, nao tem estado. O RBAC de verdade esta na
- * API — aqui as areas de admin ficam marcadas para o usuario saber o que vai
- * encontrar, nao para esconder dado (o dado nunca vem sem permissao).
+ * Server Component: e so navegacao, nao tem estado. O RBAC de verdade continua
+ * na API — o dado nunca vem sem permissao. O que esta lista faz e nao oferecer
+ * o caminho: antes o vendedor via os cinco cartoes, clicava em "Equipe" e caia
+ * numa pagina que so dizia "apenas administradores". Beco sem saida oferecido
+ * pelo proprio menu.
  */
 
 const AREAS = [
@@ -51,7 +54,11 @@ const AREAS = [
   },
 ]
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const usuario = await usuarioDaSessao()
+  const ehAdmin = usuario?.role === "admin"
+  const areas = AREAS.filter((a) => !a.soAdmin || ehAdmin)
+
   return (
     <div className="space-y-6">
       <div>
@@ -62,7 +69,7 @@ export default function SettingsPage() {
       </div>
 
       <ul className="grid gap-3 sm:grid-cols-2">
-        {AREAS.map((area) => (
+        {areas.map((area) => (
           <li key={area.href}>
             <Link
               href={area.href}

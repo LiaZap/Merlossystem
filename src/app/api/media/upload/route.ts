@@ -8,6 +8,7 @@ import {
 } from "@/lib/media/upload"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { lojaAtiva, lojaParaGravar, faltaLoja } from "@/lib/loja"
+import { recusaPeloCabecalho, recusaDoArquivo } from "@/lib/media/limites"
 
 /**
  * POST: sobe o arquivo para o MinIO e grava a linha (ADR 0006).
@@ -21,6 +22,13 @@ export async function POST(req: Request) {
     const storeId = lojaParaGravar(usuario, lojaAtiva(req))
     if (!storeId) return faltaLoja()
 
+    // ANTES do `formData()`, que le o corpo inteiro na memoria. O cabecalho e
+    // do cliente e pode mentir — por isso o tamanho real e conferido logo
+    // abaixo —, mas no caso honesto (video de 1 GB do celular) isto evita
+    // carregar tudo so para depois recusar.
+    const cedo = recusaPeloCabecalho(req.headers)
+    if (cedo) return NextResponse.json({ error: cedo.erro }, { status: cedo.status })
+
     const formData = await req.formData()
     const file = formData.get("file") as File | null
     const folder = (formData.get("folder") as string) || "general"
@@ -29,8 +37,13 @@ export async function POST(req: Request) {
     // `uploadedBy` do formData e ignorado: quem subiu vem da sessao.
 
     if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 })
+      return NextResponse.json({ error: "Nenhum arquivo enviado." }, { status: 400 })
     }
+
+    // Tamanho real e tipo. A lista de tipos e fechada: `image/svg+xml` executa
+    // script quando aberto no navegador, e a galeria mostra imagem inline.
+    const recusa = recusaDoArquivo(file)
+    if (recusa) return NextResponse.json({ error: recusa.erro }, { status: recusa.status })
 
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)

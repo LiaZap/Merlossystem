@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { registrar } from "@/lib/auditoria"
 import { hash } from "bcryptjs"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
@@ -114,6 +115,17 @@ export async function POST(req: Request) {
       },
       select: CAMPOS_DE_GESTAO,
     })
+    await registrar({
+      storeId: criado.storeId,
+      userId: usuario.id,
+      acao: "usuario_criado",
+      entidade: "usuario",
+      entidadeId: criado.id,
+      // Sem a senha: `registrar` filtra, mas nem chega a receber.
+      detalhes: { nome: criado.name, email: criado.email, papel: criado.role },
+      req,
+    })
+
     return NextResponse.json(criado, { status: 201 })
   } catch (e) {
     // P2002 = unicidade. A checagem acima resolve o caso comum; isto cobre

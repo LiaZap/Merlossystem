@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
+import { limiteDaPagina, paginaAtual } from "@/lib/paginacao"
 
 export async function GET(req: Request) {
   const usuario = await usuarioDaSessao()
@@ -11,8 +12,8 @@ export async function GET(req: Request) {
   const type = searchParams.get("type") || ""
   const severity = searchParams.get("severity") || ""
   const acknowledged = searchParams.get("acknowledged") || ""
-  const page = parseInt(searchParams.get("page") || "1")
-  const limit = parseInt(searchParams.get("limit") || "30")
+  const page = paginaAtual(searchParams.get("page"))
+  const limit = limiteDaPagina(searchParams.get("limit"), 30)
 
   const where: Record<string, unknown> = { ...escopoDaLoja(usuario, lojaAtiva(req)) }
 

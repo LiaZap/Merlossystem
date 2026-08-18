@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { registrar } from "@/lib/auditoria"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { cifrarCredenciais, ehCofreError } from "@/lib/cofre"
@@ -88,7 +89,7 @@ export async function PUT(
  * estrago se o banco vazar.
  */
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = await usuarioDaSessao()
@@ -109,6 +110,18 @@ export async function DELETE(
       deletedAt: new Date(),
       modifiedBy: usuario.id,
     },
+  })
+
+  // Desconectar apaga a credencial de verdade: reconectar exige passar de novo
+  // pelo provedor. Um canal que "parou de funcionar" tem que ter dono e hora.
+  await registrar({
+    storeId: atual.storeId,
+    userId: usuario.id,
+    acao: "integracao_desconectada",
+    entidade: "integracao",
+    entidadeId: id,
+    detalhes: { provedor: atual.provedor, rotulo: atual.rotulo },
+    req,
   })
 
   return NextResponse.json({ success: true })

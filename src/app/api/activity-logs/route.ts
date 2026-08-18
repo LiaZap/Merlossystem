@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva, lojaParaGravar, faltaLoja } from "@/lib/loja"
+import { limiteDaPagina, paginaAtual } from "@/lib/paginacao"
 
 export async function GET(req: Request) {
   const usuario = await usuarioDaSessao()
@@ -12,8 +13,8 @@ export async function GET(req: Request) {
   const userId = searchParams.get("userId") || ""
   const action = searchParams.get("action") || ""
   const entityType = searchParams.get("entityType") || ""
-  const page = parseInt(searchParams.get("page") || "1")
-  const limit = parseInt(searchParams.get("limit") || "50")
+  const page = paginaAtual(searchParams.get("page"))
+  const limit = limiteDaPagina(searchParams.get("limit"), 50)
 
   const where: Record<string, unknown> = { ...escopoDaLoja(usuario, lojaAtiva(req)) }
   if (userId) where.userId = userId

@@ -6,6 +6,7 @@ import type { ContentType } from "@/lib/channels/types"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
 import { z } from "zod"
+import { limiteDaPagina } from "@/lib/paginacao"
 
 // `senderId` NAO entra aqui: quem enviou vem da sessao.
 const sendSchema = z.object({
@@ -26,7 +27,7 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url)
   const conversationId = searchParams.get("conversationId")
-  const limit = parseInt(searchParams.get("limit") || "50")
+  const limit = limiteDaPagina(searchParams.get("limit"), 50)
   const before = searchParams.get("before") // cursor-based pagination
 
   if (!conversationId) {
